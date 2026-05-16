@@ -84,18 +84,3 @@
   right: -14px;
   background: radial-gradient(circle at 100% 0, transparent 14px, var(--bg) 14px);
 }
-
-.site-tab-chip {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
-  color: var(--brand);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  padding: 3px 7px;
-  text-transform: uppercase;
-}

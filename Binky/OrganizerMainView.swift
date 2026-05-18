@@ -27,6 +27,15 @@ struct OrganizerMainView: View {
     /// `prefs.sessionHistory`.
     @State private var cachedSortHistoryRows: [SortHistoryRowModel] = []
 
+    /// True while the Preview button's async work is in flight. Used to disable the button and
+    /// show a spinner so users don't fire multiple overlapping previews.
+    @State private var isLoadingPreview: Bool = false
+
+    /// Drives the confirmation dialog before wiping recent activity. Clearing was previously a
+    /// one-tap, irreversible action with no warning — easy to mis-fire while reaching for the
+    /// scrollbar.
+    @State private var showClearConfirmation: Bool = false
+
     /// Same persistence key as Dinky below-update review strip.
     @AppStorage("reviewPromptBelowUpdateDismissed") private var reviewPromptBelowUpdateDismissed = false
     @AppStorage("binky.onboarding.calmDesktopDismissed") private var calmDesktopOnboardingDismissed = false
@@ -613,6 +622,15 @@ struct OrganizerMainView: View {
                 .help(preset.isEnabled
                       ? String(localized: "Turn this routine off", comment: "Eye icon tooltip when on.")
                       : String(localized: "Turn this routine on", comment: "Eye icon tooltip when off."))
+                // VoiceOver previously announced this button as just "image" because the icon
+                // is the only label. Make the routine name + on/off state explicit.
+                .accessibilityLabel(String.localizedStringWithFormat(
+                    String(localized: "Routine “%@” enabled", comment: "VoiceOver label for routine enable/disable toggle."),
+                    preset.name
+                ))
+                .accessibilityValue(preset.isEnabled
+                                    ? String(localized: "On", comment: "VoiceOver value when routine is enabled.")
+                                    : String(localized: "Off", comment: "VoiceOver value when routine is disabled."))
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 6)
@@ -884,18 +902,35 @@ struct OrganizerMainView: View {
 
             HStack(spacing: 10) {
                 Button {
+                    guard !isLoadingPreview else { return }
+                    isLoadingPreview = true
                     Task {
                         let rows = await vm.inboxPreviewEntries(prefs: prefs)
                         await MainActor.run {
                             sortPreviewRows = rows
                             showInlineSortPreview = true
+                            isLoadingPreview = false
                         }
                     }
                 } label: {
-                    Text(String(localized: "Preview…", comment: "Dry-run sort sorted folders."))
+                    HStack(spacing: 6) {
+                        if isLoadingPreview {
+                            // Match the system progress style used elsewhere in the app for
+                            // small, embedded async work.
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                                .frame(width: 12, height: 12)
+                        }
+                        Text(String(localized: "Preview…", comment: "Dry-run sort sorted folders."))
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(isLoadingPreview)
+                .accessibilityValue(isLoadingPreview
+                                    ? String(localized: "Loading", comment: "VoiceOver value while Preview is computing.")
+                                    : "")
 
                 Spacer(minLength: 0)
 
@@ -1066,6 +1101,13 @@ struct OrganizerMainView: View {
             Image(systemName: "folder.badge.questionmark")
         }
         .help(String(localized: "Pending review", comment: "Toolbar button tooltip: pending review files."))
+        // Icon-only toolbar buttons need an explicit VO label and a value that conveys the count
+        // overlay (which is purely visual via the badge capsule).
+        .accessibilityLabel(String(localized: "Pending review", comment: "VoiceOver label for the review-folder toolbar button."))
+        .accessibilityValue(String.localizedStringWithFormat(
+            String(localized: "%lld files", comment: "VoiceOver value for the review-folder toolbar button: count of files awaiting review."),
+            Int64(reviewBannerCount)
+        ))
         .overlay(alignment: .topLeading) {
             if reviewBannerCount > 0 {
                 Text("\(min(reviewBannerCount, 99))")
@@ -1192,12 +1234,24 @@ struct OrganizerMainView: View {
                         .font(.headline)
                     Spacer(minLength: 0)
                     Button(S.clear) {
-                        clearRecentActivity()
+                        showClearConfirmation = true
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(binkyTintColor)
                     .font(.subheadline.weight(.medium))
-                    .accessibilityHint(String(localized: "Clears recent activity and returns to the empty state.", comment: "VoiceOver hint for clearing recent activity."))
+                    .accessibilityHint(String(localized: "Asks before clearing recent activity.", comment: "VoiceOver hint for clearing recent activity (now confirmed before wiping)."))
+                    .confirmationDialog(
+                        String(localized: "Clear recent activity?", comment: "Confirmation dialog title before wiping recent activity."),
+                        isPresented: $showClearConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button(String(localized: "Clear", comment: "Confirm clearing recent activity."), role: .destructive) {
+                            clearRecentActivity()
+                        }
+                        Button(String(localized: "Cancel", comment: "Cancel clearing recent activity."), role: .cancel) { }
+                    } message: {
+                        Text(String(localized: "Recent sort sessions and the last summary will be removed. This can’t be undone.", comment: "Body text for the clear-recent-activity confirmation dialog."))
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)

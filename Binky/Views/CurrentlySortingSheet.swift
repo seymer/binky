@@ -1,11 +1,19 @@
 import SwiftUI
 
 /// Per-file shim during sort — work is brief, so soft pulse instead of bogus determinate fills.
+///
+/// `TimelineView(.animation)` keeps firing at its target rate even when the host view is occluded,
+/// off-screen, or the sheet is dismissed-but-not-deallocated. We pin a `paused` flag to the
+/// view's appearance so the sine-wave loop stops as soon as the bar isn't actually visible. This
+/// matters during heavy sort batches where many of these rows could otherwise stack into a
+/// noticeable CPU/GPU baseline.
 private struct PulsePinkRowBar: View {
     let height: CGFloat
 
+    @State private var isVisible: Bool = false
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 35.0, paused: false)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 35.0, paused: !isVisible)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let ping = CGFloat(0.52 + sin(t * 5.8) * 0.42)
             ZStack(alignment: .leading) {
@@ -18,6 +26,8 @@ private struct PulsePinkRowBar: View {
             }
             .frame(height: height)
         }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
     }
 }
 

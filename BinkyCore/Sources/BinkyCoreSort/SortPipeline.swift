@@ -6,14 +6,28 @@ import BinkyCoreShared
 
 // MARK: - Transient filenames
 
+/// File-name fragments that indicate a download or app temp file is still being written.
+///
+/// Coverage by tool:
+/// - `.crdownload`, `.crswap` — Chrome / Chromium / Edge / Brave (newer builds use `.crswap` for atomic replacement of an in-progress file)
+/// - `.download` — Safari, older WebKit downloaders
+/// - `.part`, `.partial` — Firefox, plain HTTP downloaders
+/// - `.opdownload` — Opera
+/// - `.aria2` — aria2 download manager
+/// - `.!ut` — µTorrent / qBittorrent in-progress chunks
+/// - `~`, `.tmp`, `.temp` — generic editor/installer temp files
 private let suspiciousSuffixes: [String] = [
-    ".crdownload", ".download", ".part", ".partial",
+    ".crdownload", ".crswap", ".download", ".part", ".partial",
+    ".opdownload", ".aria2", ".!ut",
     "~", ".tmp", ".temp",
 ]
 
 func looksTransientIncomplete(_ url: URL) -> Bool {
     let n = url.lastPathComponent.lowercased()
     if n == ".ds_store" { return false }
+    // Microsoft Office writes hidden lock files like `~$Document.docx` while the file is open.
+    // Treat the `~$` prefix the same way we treat dotfiles — never sortable.
+    if n.hasPrefix("~$") { return true }
     if n.hasPrefix(".") { return true }
     return suspiciousSuffixes.contains(where: { n.hasSuffix($0) })
 }

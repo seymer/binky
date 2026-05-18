@@ -16,6 +16,17 @@ struct OrganizerMainView: View {
     @State private var showInlineSortPreview = false
     @State private var showingReviewTriage = false
 
+    /// Cached snapshot of files in the Review folder. Refreshed on appear, after each sort
+    /// completes, and when the user dismisses the Review triage sheet. Previously this was a
+    /// computed property that hit the filesystem on every SwiftUI body evaluation, which made the
+    /// main view re-stat the Review directory dozens of times per second during a sort.
+    @State private var cachedReviewFolderItemCount: Int = 0
+
+    /// Cached decoded session history rows. Previously this decoded every history record's JSON
+    /// payload on every body evaluation. Now the decode happens once per change to
+    /// `prefs.sessionHistory`.
+    @State private var cachedSortHistoryRows: [SortHistoryRowModel] = []
+
     /// Same persistence key as Dinky below-update review strip.
     @AppStorage("reviewPromptBelowUpdateDismissed") private var reviewPromptBelowUpdateDismissed = false
     @AppStorage("binky.onboarding.calmDesktopDismissed") private var calmDesktopOnboardingDismissed = false
@@ -63,9 +74,19 @@ struct OrganizerMainView: View {
             BinkyMenuBarController.shared.refresh()
             quickSortFolderURL = prefs.downloadsSortRootDirectory()
             expandSidebarIfRoutinesExist()
+            refreshDerivedState()
         }
         .onChange(of: prefs.savedPresets.count) { _, _ in
             expandSidebarIfRoutinesExist()
+            // Active sort root depends on routines, so the Review folder we measure changes too.
+            refreshDerivedState()
+        }
+        .onChange(of: prefs.sessionHistory.count) { _, _ in
+            refreshDerivedState()
+        }
+        .onChange(of: vm.lastSortOutcome?.id) { _, _ in
+            // A finished sort may have produced new Review-folder entries.
+            refreshDerivedState()
         }
         .onChange(of: prefs.showMenuBarIcon) { _, _ in
             BinkyMenuBarController.shared.refresh()
@@ -76,7 +97,7 @@ struct OrganizerMainView: View {
         .sheet(isPresented: $showingSortPreview) {
             SortPreviewSheet(rows: sortPreviewRows)
         }
-        .sheet(isPresented: $showingReviewTriage) {
+        .sheet(isPresented: $showingReviewTriage, onDismiss: { refreshDerivedState() }) {
             ReviewFolderTriageSheet()
                 .environmentObject(prefs)
         }
@@ -1362,11 +1383,7 @@ struct OrganizerMainView: View {
     }
 
     private var sortHistoryRows: [SortHistoryRowModel] {
-        prefs.sessionHistory.compactMap { record in
-            guard let data = record.batchSummaryData,
-                  let outcome = try? JSONDecoder().decode(SortBatchOutcome.self, from: data) else { return nil }
-            return SortHistoryRowModel(id: record.id, record: record, outcome: outcome)
-        }
+        cachedSortHistoryRows
     }
 
     private var showReviewBanner: Bool {
@@ -1403,6 +1420,26 @@ struct OrganizerMainView: View {
     }
 
     private var reviewFolderItemCount: Int {
+        cachedReviewFolderItemCount
+    }
+
+    /// Computes the live review-folder count and history rows from disk / preferences. Called on
+    /// view appear, when prefs change in ways that affect the result, and after sort batches
+    /// finish — never from inside view body.
+    private func refreshDerivedState() {
+        cachedReviewFolderItemCount = computeReviewFolderItemCount()
+        cachedSortHistoryRows = computeSortHistoryRows()
+    }
+
+    private func computeSortHistoryRows() -> [SortHistoryRowModel] {
+        prefs.sessionHistory.compactMap { record in
+            guard let data = record.batchSummaryData,
+                  let outcome = try? JSONDecoder().decode(SortBatchOutcome.self, from: data) else { return nil }
+            return SortHistoryRowModel(id: record.id, record: record, outcome: outcome)
+        }
+    }
+
+    private func computeReviewFolderItemCount() -> Int {
         let root = prefs.activeSortSweepRootDirectory()
         let reviewURL = root.appendingPathComponent(FileSortCategory.review.downloadsSubfolder, isDirectory: true)
         guard let contents = try? FileManager.default.contentsOfDirectory(at: reviewURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {

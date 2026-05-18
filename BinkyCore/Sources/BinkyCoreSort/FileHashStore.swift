@@ -129,7 +129,12 @@ public final class FileHashStore: @unchecked Sendable {
         }
         defer { try? fh.close() }
         var hasher = SHA256()
+        // Mid-loop cancellation: very large files (multi-GB photos / RAW) used to ignore stop
+        // requests until hashing completed. Honoring `Task.checkCancellation()` between chunks
+        // means the user can press Stop and have the in-flight hash bail out within ~one 512KB
+        // read, instead of waiting for the whole file.
         while true {
+            try Task.checkCancellation()
             let chunk = try fh.read(upToCount: 512 * 1024)
             guard let chunk, !chunk.isEmpty else { break }
             hasher.update(data: chunk)

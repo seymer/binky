@@ -197,26 +197,57 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// Writes a shell script that waits for this process to quit, replaces the app bundle, cleans up, and opens the new app.
+    ///
+    /// Two safety properties this script must preserve:
+    ///
+    /// 1. **Never `rm -rf` a still-running app.** If the host process hasn't exited by the
+    ///    deadline, abort cleanly — the user can retry later. The previous version proceeded
+    ///    even if `kill -0` was still succeeding, which could corrupt memory-mapped pages of the
+    ///    running bundle.
+    ///
+    /// 2. **The on-disk bundle is never in a destroyed-but-not-replaced state.** We rename the
+    ///    existing app to a sibling backup path (atomic rename on the same volume) before laying
+    ///    down the new one, and roll back the rename if `ditto` fails. The "no app at $DEST"
+    ///    window shrinks from "however long ditto takes" to "one inode rename".
     private func launchDeferredBundleReplace(stagedApp: URL, destination: URL, cleanupPaths: [String]) throws {
         let fm = FileManager.default
         let scriptURL = fm.temporaryDirectory.appendingPathComponent("binky-install-\(UUID().uuidString).sh")
         let pid = ProcessInfo.processInfo.processIdentifier
         var lines: [String] = [
             "#!/bin/bash",
-            // No set -e: we want open to run even if xattr exits non-zero.
-            // Poll until this PID is gone (handles both the fast NSApp.terminate path
-            // and the 4-second hard-exit fallback). 10s cap is a safety valve.
-            "deadline=$(( $(date +%s) + 10 ))",
+            // No set -e: we want `open` to run even if xattr exits non-zero, and we need to
+            // restore on partial failure further down.
+            //
+            // Wait for the host PID to die. 30s is enough for any reasonable shutdown — the in-app
+            // safety net (Thread.detachNewThread { sleep 4; exit(0) }) means we normally exit
+            // within ~5s. If we hit the deadline anyway, the host is wedged in some unusual way
+            // (sheet blocking terminate, deadlock) and we MUST NOT touch the running bundle.
+            "deadline=$(( $(date +%s) + 30 ))",
             "while kill -0 \(pid) 2>/dev/null && [ $(date +%s) -lt $deadline ]; do sleep 0.2; done",
-            "rm -rf \(bashSingleQuotedPath(destination.path)) || exit 1",
-            "/usr/bin/ditto \(bashSingleQuotedPath(stagedApp.path)) \(bashSingleQuotedPath(destination.path)) || exit 1",
+            "if kill -0 \(pid) 2>/dev/null; then",
+            "  echo 'Binky updater: host process did not exit within 30s; aborting.' >&2",
+            "  exit 2",
+            "fi",
+            "DEST=\(bashSingleQuotedPath(destination.path))",
+            "STAGED=\(bashSingleQuotedPath(stagedApp.path))",
+            // BACKUP must live next to DEST so /bin/mv stays atomic (same volume rename).
+            "BACKUP=\"$DEST.binky-old-$$\"",
+            "if [ -e \"$DEST\" ]; then",
+            "  /bin/mv \"$DEST\" \"$BACKUP\" || exit 1",
+            "fi",
+            "if ! /usr/bin/ditto \"$STAGED\" \"$DEST\"; then",
+            // Roll back: ditto failed, restore the original bundle if we backed it up.
+            "  if [ -e \"$BACKUP\" ]; then /bin/mv \"$BACKUP\" \"$DEST\"; fi",
+            "  exit 1",
+            "fi",
             // Strip quarantine so Gatekeeper doesn't block the freshly-written bundle.
-            "/usr/bin/xattr -rd com.apple.quarantine \(bashSingleQuotedPath(destination.path)) 2>/dev/null || true",
+            "/usr/bin/xattr -rd com.apple.quarantine \"$DEST\" 2>/dev/null || true",
+            // Backup is no longer needed.
+            "if [ -e \"$BACKUP\" ]; then /bin/rm -rf \"$BACKUP\"; fi",
             // Unregister other Homebrew cask trees only (no mdfind/Spotlight — that could block
             // before `open -n`). `brew cleanup` still removes old Caskroom copies on disk.
             "shopt -s nullglob",
             "LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-            "DEST=\(bashSingleQuotedPath(destination.path))",
             "D_CAN=$(/usr/bin/realpath \"$DEST\" 2>/dev/null || echo \"$DEST\")",
             "for other in /opt/homebrew/Caskroom/binky/*/Binky.app /usr/local/Caskroom/binky/*/Binky.app; do",
             "  [ -e \"$other\" ] || continue",
@@ -230,7 +261,7 @@ final class UpdateChecker: ObservableObject {
             lines.append("rm -rf \(bashSingleQuotedPath(p))")
         }
         // -n forces a new instance rather than connecting to any stale Launch Services entry.
-        lines.append("/usr/bin/open -n \(bashSingleQuotedPath(destination.path))")
+        lines.append("/usr/bin/open -n \"$DEST\"")
         try lines.joined(separator: "\n").write(to: scriptURL, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: scriptURL.path)
 

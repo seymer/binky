@@ -46,7 +46,7 @@ struct BinkyApp: App {
         }
         .windowStyle(.titleBar)
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 440, height: 440)
+        .defaultSize(width: 780, height: 560)
         .commands {
             CommandGroup(after: .newItem) {
                 BinkyShortcutCommands(prefs: root.prefs)

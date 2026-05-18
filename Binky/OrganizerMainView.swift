@@ -62,7 +62,7 @@ struct OrganizerMainView: View {
     var body: some View {
         NavigationSplitView {
             slimOrganizerSidebar
-                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 320)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 290, max: 340)
         } detail: {
             activityMainPane
                 .frame(minWidth: 440, minHeight: 440)

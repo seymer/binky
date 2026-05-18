@@ -313,12 +313,18 @@ private enum PostSortShortcutRunner {
     static func run(shortcutName: String, fileURL: URL) {
         let trimmed = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "&+=")
-        let encName = trimmed.addingPercentEncoding(withAllowedCharacters: allowed) ?? trimmed
-        let text = fileURL.absoluteString
-        let encText = text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text
-        guard let url = URL(string: "shortcuts://run-shortcut?name=\(encName)&input=text&text=\(encText)") else { return }
+        // Use URLComponents to properly encode query parameters. The previous manual
+        // percent-encoding with `CharacterSet.urlQueryAllowed` minus `&+=` still allowed `#`
+        // through, which fragments the URL and truncates the shortcut name or input.
+        var components = URLComponents()
+        components.scheme = "shortcuts"
+        components.host = "run-shortcut"
+        components.queryItems = [
+            URLQueryItem(name: "name", value: trimmed),
+            URLQueryItem(name: "input", value: "text"),
+            URLQueryItem(name: "text", value: fileURL.absoluteString),
+        ]
+        guard let url = components.url else { return }
         NSWorkspace.shared.open(url)
     }
 }

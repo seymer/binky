@@ -1880,6 +1880,24 @@ struct RuleEditorSheet: View {
                         }
                     }
                     .accessibilityHint(String(localized: "Move, extract, install a disk image, fan out by tag, zip, trash, or rename in place.", comment: "VoiceOver: rule action picker."))
+                    // Warn when the user picks extractAndTrash but the matched extensions include
+                    // formats Binky can't extract (no bundled unrar/7z — only zip/tar/gz/bz2/xz).
+                    if draft.matchAction == .extractAndTrash {
+                        let unsupported = Set(draft.matchExtensions.map { $0.lowercased() }).intersection(["rar", "7z", "7zip", "lzh", "cab"])
+                        if !unsupported.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                                Text(String.localizedStringWithFormat(
+                                    String(localized: "Binky can't extract %@ files. These will be skipped at sort time.", comment: "Rule editor warning: unsupported archive format list."),
+                                    unsupported.sorted().joined(separator: ", ")
+                                ))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             TextField(String(localized: "Destination (relative to watch folder)", comment: "Rule editor."), text: binding(\.destinationRelativePath))
@@ -3187,7 +3205,7 @@ private struct FinderTagDefaultsByCategoryMapEditor: View {
                 Text(String(localized: "Category", comment: "Column header: sort category for Finder tag defaults."))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: typeColumnMinWidth, maxWidth: typeColumnMinWidth, alignment: .leading)
+                    .frame(minWidth: typeColumnMinWidth, alignment: .leading)
                 Text(tagsColumnTitle)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -3195,7 +3213,7 @@ private struct FinderTagDefaultsByCategoryMapEditor: View {
                 Text(builtInColumnTitle)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: builtInColumnWidth, alignment: .leading)
+                    .frame(minWidth: builtInColumnWidth, alignment: .leading)
             }
             .accessibilityHidden(true)
 
@@ -3204,7 +3222,7 @@ private struct FinderTagDefaultsByCategoryMapEditor: View {
                     Text(Self.rowTitle(for: category))
                         .font(.subheadline.weight(.medium))
                         .multilineTextAlignment(.leading)
-                        .frame(minWidth: typeColumnMinWidth, maxWidth: typeColumnMinWidth, alignment: .leading)
+                        .frame(minWidth: typeColumnMinWidth, alignment: .leading)
 
                     TextField("", text: binding(for: category), prompt: tagsFieldPrompt)
                         .textFieldStyle(.roundedBorder)
@@ -3225,7 +3243,7 @@ private struct FinderTagDefaultsByCategoryMapEditor: View {
     /// Matches widest localized category label so the tag fields align.
     private var typeColumnMinWidth: CGFloat { 130 }
 
-    private var builtInColumnWidth: CGFloat { 92 }
+    private var builtInColumnWidth: CGFloat { 110 }
 
     private var tagsFieldPrompt: Text {
         Text(String(localized: "Optional — comma-separated", comment: "Placeholder for per-type Finder tag list (single prompt for all rows)."))

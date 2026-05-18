@@ -12,6 +12,28 @@ final class BinkyPreferences: ObservableObject {
         seedDefaultProfileIfNeeded()
         ensureActiveProfileIsValid()
         migrateRoutineLegacyWatchFoldersIfNeeded()
+
+        // When another process (the CLI, `defaults write`, or a synced pref store) modifies
+        // UserDefaults, our in-memory caches go stale. Observing the notification lets us
+        // invalidate lazily — the next getter re-decodes from the fresh backing store.
+        NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.invalidateAllCaches()
+        }
+    }
+
+    /// Drops all in-memory decoded caches so the next property access re-reads from UserDefaults.
+    /// Called when `UserDefaults.didChangeNotification` fires (external writes from CLI, etc).
+    private func invalidateAllCaches() {
+        cachedGlobalSkipTags = nil
+        cachedSavedPresets = nil
+        cachedSessionHistory = nil
+        cachedFileAgingRules = nil
+        cachedSortRoutingRules = nil
+        objectWillChange.send()
     }
 
     /// One-time migrate from compression-era defaults key (`shortcut.compressNow` → `shortcut.sortNow`).

@@ -3,7 +3,6 @@ import Foundation
 final class FolderWatcher: ObservableObject {
     var onNewFiles: (([URL]) -> Void)?
     private var stream: FSEventStreamRef?
-    private var retainedSelf: UnsafeMutableRawPointer?
 
     /// FSEvents callbacks do file-existence and resource-value lookups before forwarding the URL
     /// list to consumers. We dispatch the stream to a dedicated background queue so those
@@ -15,6 +14,11 @@ final class FolderWatcher: ObservableObject {
     )
 
     /// Subscribes to filesystem changes under one or more directories (`paths` must be non-empty).
+    ///
+    /// **Lifetime contract:** The caller must keep a strong reference to this `FolderWatcher`
+    /// instance for as long as the stream is active. The FSEvents context uses
+    /// `Unmanaged.passUnretained` — the watcher does NOT retain itself. If the owning object
+    /// drops its reference without calling `stop()`, `deinit` will tear down the stream safely.
     func start(paths: [String]) {
         stop()
         let normalized = paths
@@ -22,9 +26,11 @@ final class FolderWatcher: ObservableObject {
             .filter { !$0.isEmpty }
         guard !normalized.isEmpty else { return }
 
-        let retained = Unmanaged.passRetained(self).toOpaque()
-        retainedSelf = retained
-        var ctx = FSEventStreamContext(version: 0, info: retained,
+        // passUnretained: the caller owns our lifetime. No retain cycle, no leaked watcher if
+        // the owner is deallocated (deinit calls stop() which invalidates the stream before the
+        // pointer could dangle).
+        let unretained = Unmanaged.passUnretained(self).toOpaque()
+        var ctx = FSEventStreamContext(version: 0, info: unretained,
                                        retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
             guard let info else { return }
@@ -58,13 +64,9 @@ final class FolderWatcher: ObservableObject {
             1.5,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
         )
-        guard let stream else {
-            Unmanaged<FolderWatcher>.fromOpaque(retained).release()
-            retainedSelf = nil
-            return
-        }
-        FSEventStreamSetDispatchQueue(stream, Self.dispatchQueue)
-        FSEventStreamStart(stream)
+        guard stream != nil else { return }
+        FSEventStreamSetDispatchQueue(stream!, Self.dispatchQueue)
+        FSEventStreamStart(stream!)
     }
 
     func stop() {
@@ -73,10 +75,6 @@ final class FolderWatcher: ObservableObject {
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
             self.stream = nil
-        }
-        if let retained = retainedSelf {
-            Unmanaged<FolderWatcher>.fromOpaque(retained).release()
-            retainedSelf = nil
         }
     }
 

@@ -9,6 +9,8 @@ enum ArchiveExtractionService: Sendable {
         case destinationExists(URL)
         /// Archive contained an entry that escaped the destination directory (path traversal).
         case pathTraversalDetected(URL)
+        /// Archive's compression ratio or uncompressed size exceeds safe limits (zip bomb).
+        case zipBombDetected(ratio: Double, uncompressedBytes: UInt64)
     }
 
     /// Extracts `source` into `destinationDirectory` (created if needed). Does not delete the source.
@@ -16,9 +18,17 @@ enum ArchiveExtractionService: Sendable {
     /// After extraction, every produced entry is verified to live under `destinationDirectory`.
     /// Any entry whose resolved path escapes the destination causes the extraction to be rolled
     /// back (destination tree removed) and `pathTraversalDetected` is thrown.
+    ///
+    /// For zip archives, a pre-flight compression-ratio check rejects zip bombs (ratio > 100:1
+    /// or uncompressed size > 10 GB) before any bytes are written to disk.
     static func extract(source: URL, destinationDirectory: URL) throws {
         let fm = FileManager.default
         let ext = source.pathExtension.lowercased()
+
+        // Zip bomb pre-flight: inspect the central directory without extracting.
+        if ext == "zip" {
+            try rejectZipBomb(at: source)
+        }
 
         try fm.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
 
@@ -72,6 +82,43 @@ enum ArchiveExtractionService: Sendable {
         p.waitUntilExit()
         guard p.terminationStatus == 0 else {
             throw ExtractionError.processFailed(label, p.terminationStatus)
+        }
+    }
+
+    /// Reads the zip central directory via `zipinfo -l` and sums the uncompressed sizes.
+    /// Rejects if ratio > 100:1 or total uncompressed > 10 GB.
+    private static func rejectZipBomb(at source: URL) throws {
+        let fm = FileManager.default
+        let attrs = try fm.attributesOfItem(atPath: source.path)
+        let compressedSize = (attrs[.size] as? UInt64) ?? 0
+        guard compressedSize > 0 else { return }
+
+        let p = Process()
+        let pipe = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/zipinfo")
+        p.arguments = ["-l", source.path]
+        p.standardOutput = pipe
+        p.standardError = FileHandle(forWritingAtPath: "/dev/null")
+        do { try p.run() } catch { return } // zipinfo missing → skip check
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return }
+
+        // Parse the last line which looks like: "N files, UUUUUU bytes uncompressed, CCCCCC bytes compressed: NN.N%"
+        guard let output = String(data: data, encoding: .utf8),
+              let lastLine = output.split(separator: "\n").last else { return }
+        // Extract the first large number after "files," — that's total uncompressed bytes.
+        let pattern = #"(\d[\d,]*)\s+bytes\s+uncompressed"#
+        guard let match = lastLine.range(of: pattern, options: .regularExpression) else { return }
+        let numStr = String(lastLine[match]).components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        guard let uncompressed = UInt64(numStr) else { return }
+
+        let maxUncompressed: UInt64 = 10 * 1024 * 1024 * 1024 // 10 GB
+        let maxRatio: Double = 100.0
+        let ratio = Double(uncompressed) / Double(compressedSize)
+
+        if uncompressed > maxUncompressed || ratio > maxRatio {
+            throw ExtractionError.zipBombDetected(ratio: ratio, uncompressedBytes: uncompressed)
         }
     }
 

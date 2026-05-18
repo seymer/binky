@@ -4,6 +4,7 @@
 # Usage:
 #   ./release.sh 1.2.3
 #   ./release.sh 1.2.3 --bump-only   # steps 1–2 only (no build, git, or gh)
+#   ./release.sh 1.2.3 --no-push     # steps 1–4 (bump, build, DMG, cask) — no commit, tag, push, or gh release
 #
 # What it does:
 #   1. Bumps MARKETING_VERSION + CURRENT_PROJECT_VERSION in the Xcode project
@@ -27,13 +28,15 @@ set -e  # exit on any error
 # ── Args ──────────────────────────────────────────────────────────────────────
 
 BUMP_ONLY=false
+NO_PUSH=false
 VERSION=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --bump-only) BUMP_ONLY=true; shift ;;
+    --no-push)   NO_PUSH=true;   shift ;;
     *)
       if [ -n "$VERSION" ]; then
-        echo "Usage: ./release.sh <version> [--bump-only]"
+        echo "Usage: ./release.sh <version> [--bump-only|--no-push]"
         exit 1
       fi
       VERSION="$1"
@@ -43,7 +46,14 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$VERSION" ]; then
-  echo "Usage: ./release.sh <version> [--bump-only]  (e.g. ./release.sh 2.4.1 --bump-only)"
+  echo "Usage: ./release.sh <version> [--bump-only|--no-push]"
+  echo "  --bump-only  Steps 1–2 only: write version into project + site, no build, git, or gh."
+  echo "  --no-push    Steps 1–4: bump, build Release, create DMG + zip, update Cask. No commit, tag, push, or gh release."
+  exit 1
+fi
+
+if [ "$BUMP_ONLY" = true ] && [ "$NO_PUSH" = true ]; then
+  echo "✗ --bump-only and --no-push are mutually exclusive."
   exit 1
 fi
 
@@ -197,6 +207,23 @@ path.write_text(new_text, encoding="utf-8")
 PY
 
 # ── 5. Optional bump commit, push, tag, release ─────────────────────────────
+
+# --no-push: stop here. The DMG / zip / updated Cask are on disk for inspection or for kicking off
+# a release manually. No git or gh side-effects so a typo in <version> can be undone with `git
+# checkout` and re-run.
+if [ "$NO_PUSH" = true ]; then
+  echo ""
+  echo "✓ --no-push: built Binky v$VERSION locally (DMG + zip + cask updated)."
+  echo "  Skipped: commit, tag, push, gh release."
+  echo "  Inspect:"
+  echo "    open Binky-$VERSION.dmg"
+  echo "    git status"
+  echo "  When you're satisfied, re-run without --no-push to publish, or:"
+  echo "    git add -A && git commit -m \"Bump to v$VERSION\""
+  echo "    git tag v$VERSION && git push origin main v$VERSION"
+  echo "    gh release create v$VERSION Binky-$VERSION.dmg Binky-$VERSION.zip --title \"Binky $VERSION\""
+  exit 0
+fi
 
 echo "→ Committing version files (if changed by this run)…"
 git add Casks/binky.rb Binky.xcodeproj/project.pbxproj site/index.html site/llms.txt README.md

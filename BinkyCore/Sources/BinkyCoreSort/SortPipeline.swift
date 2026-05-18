@@ -539,7 +539,11 @@ public final class PerDestinationUniquifyGate: @unchecked Sendable {
     }
 }
 
-private enum SortZipViaDitto {
+/// Wraps `/usr/bin/ditto` zip creation with a post-write integrity check. `internal` rather than
+/// `private` so the test target (`@testable import BinkyCoreSort`) can verify both the
+/// happy-path zip-then-delete behavior and the failure path where a corrupted archive must not
+/// trigger a source delete.
+enum SortZipViaDitto {
     /// Creates a zip at `zipDestinationURL` from `sourceFile`, verifies the produced archive is
     /// readable, then removes the source on success.
     ///
@@ -572,7 +576,8 @@ private enum SortZipViaDitto {
 
     /// Throws if the zip is missing, empty, or fails `unzip -tq` (CRC mismatch, truncation, etc).
     /// Cleans up the bad archive on failure so the caller can retry without colliding with itself.
-    private static func verifyZipIntegrity(at zipURL: URL) throws {
+    /// `internal` for direct testing — production code reaches it via `zipReplacingSource`.
+    static func verifyZipIntegrity(at zipURL: URL) throws {
         let fm = FileManager.default
 
         // (1) Cheap size sanity check — a 0-byte file is never a valid zip and almost always means

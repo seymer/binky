@@ -53,7 +53,10 @@ enum DMGInstallerService: Sendable {
     /// Copies the new app to a sibling staging path, then atomically swaps it into place.
     /// Until the swap, the existing app is untouched — so a failure mid-copy never leaves the user
     /// without their installed app.
-    private static func atomicallyInstall(appURL: URL, finalDestination dest: URL) throws {
+    ///
+    /// `internal` (rather than `private`) so the test target can exercise the swap directly with
+    /// arbitrary fixture directories instead of requiring a real DMG round-trip.
+    static func atomicallyInstall(appURL: URL, finalDestination dest: URL) throws {
         let fm = FileManager.default
         let parent = dest.deletingLastPathComponent()
         let staging = parent.appendingPathComponent(".\(dest.lastPathComponent).binky-staged-\(UUID().uuidString)", isDirectory: true)

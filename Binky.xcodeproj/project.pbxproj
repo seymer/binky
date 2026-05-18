@@ -60,6 +60,7 @@
 		WFTSTBLD000000000000001 /* WhereFromsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WFTSTREF000000000000001 /* WhereFromsTests.swift */; };
 		FTTST200001BK000001 /* FinderTagCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FTTST100001FR000001 /* FinderTagCompositionTests.swift */; };
 		ATOBKB00000000000000001 /* RoutinesOverhaulTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ATOBKF00000000000000001 /* RoutinesOverhaulTests.swift */; };
+		HRDNTBLD000000000000001 /* HardeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = HRDNTREF000000000000001 /* HardeningTests.swift */; };
 		SPTKR200001BK000002 /* SortProgressTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = SPTKR100001FR000001 /* SortProgressTracker.swift */; };
 		BBAR200001BK000002 /* BinkySortProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAR100001FR000001 /* BinkySortProgressBar.swift */; };
 		CURS200001BK000002 /* CurrentlySortingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CURS100001FR000001 /* CurrentlySortingSheet.swift */; };
@@ -151,6 +152,7 @@
 		WFTSTREF000000000000001 /* WhereFromsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhereFromsTests.swift; sourceTree = "<group>"; };
 		FTTST100001FR000001 /* FinderTagCompositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderTagCompositionTests.swift; sourceTree = "<group>"; };
 		ATOBKF00000000000000001 /* RoutinesOverhaulTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutinesOverhaulTests.swift; sourceTree = "<group>"; };
+		HRDNTREF000000000000001 /* HardeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardeningTests.swift; sourceTree = "<group>"; };
 		SPTKR100001FR000001 /* SortProgressTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortProgressTracker.swift; sourceTree = "<group>"; };
 		BBAR100001FR000001 /* BinkySortProgressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinkySortProgressBar.swift; sourceTree = "<group>"; };
 		CURS100001FR000001 /* CurrentlySortingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentlySortingSheet.swift; sourceTree = "<group>"; };
@@ -319,6 +321,7 @@
 				WFTSTREF000000000000001 /* WhereFromsTests.swift */,
 				FTTST100001FR000001 /* FinderTagCompositionTests.swift */,
 				ATOBKF00000000000000001 /* RoutinesOverhaulTests.swift */,
+				HRDNTREF000000000000001 /* HardeningTests.swift */,
 			);
 			path = BinkyTests;
 			sourceTree = "<group>";
@@ -500,6 +503,7 @@
 				WFTSTBLD000000000000001 /* WhereFromsTests.swift in Sources */,
 				FTTST200001BK000001 /* FinderTagCompositionTests.swift in Sources */,
 				ATOBKB00000000000000001 /* RoutinesOverhaulTests.swift in Sources */,
+				HRDNTBLD000000000000001 /* HardeningTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

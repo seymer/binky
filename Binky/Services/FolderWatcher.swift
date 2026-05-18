@@ -5,6 +5,15 @@ final class FolderWatcher: ObservableObject {
     private var stream: FSEventStreamRef?
     private var retainedSelf: UnsafeMutableRawPointer?
 
+    /// FSEvents callbacks do file-existence and resource-value lookups before forwarding the URL
+    /// list to consumers. We dispatch the stream to a dedicated background queue so those
+    /// synchronous filesystem stat calls never block the main thread when the watched folder
+    /// suddenly produces a burst of events (zip extraction, large download finishing, etc).
+    private static let dispatchQueue = DispatchQueue(
+        label: "com.binky.folderwatcher",
+        qos: .utility
+    )
+
     /// Subscribes to filesystem changes under one or more directories (`paths` must be non-empty).
     func start(paths: [String]) {
         stop()
@@ -54,7 +63,7 @@ final class FolderWatcher: ObservableObject {
             retainedSelf = nil
             return
         }
-        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+        FSEventStreamSetDispatchQueue(stream, Self.dispatchQueue)
         FSEventStreamStart(stream)
     }
 

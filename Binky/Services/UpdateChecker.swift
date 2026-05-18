@@ -170,6 +170,11 @@ final class UpdateChecker: ObservableObject {
                 cleanupPaths.append(stagedCopy.path)
             }
 
+            // Hard-stop if the downloaded bundle fails signature/identity checks.
+            // Without this, anyone who hijacks the GitHub release pipeline gets a one-shot RCE
+            // because the deferred installer also strips com.apple.quarantine.
+            try await verifyStagedBundle(at: stagedApp)
+
             try launchDeferredBundleReplace(stagedApp: stagedApp, destination: dest, cleanupPaths: cleanupPaths)
 
             // Clear the sentinel now so a forced exit below doesn't produce a false crash report.
@@ -253,14 +258,101 @@ final class UpdateChecker: ObservableObject {
     private enum UpdateError: LocalizedError {
         case mountFailed
         case missingAppInArchive
+        case signatureInvalid(String)
+        case bundleIdentifierMismatch(String)
+        case signingIdentityMismatch
         var errorDescription: String? {
             switch self {
             case .mountFailed:
                 return String(localized: "Couldn't mount the update disk image.", comment: "In-app updater error.")
             case .missingAppInArchive:
                 return String(localized: "The update didn’t contain Binky.app.", comment: "In-app updater error.")
+            case .signatureInvalid(let detail):
+                return String(localized: "The update’s code signature isn’t valid: \(detail)", comment: "In-app updater error: codesign --verify failed.")
+            case .bundleIdentifierMismatch(let bid):
+                return String(localized: "The update has an unexpected bundle identifier (\(bid)).", comment: "In-app updater error: CFBundleIdentifier did not match.")
+            case .signingIdentityMismatch:
+                return String(localized: "The update was signed by a different identity than the installed app.", comment: "In-app updater error: codesign team/identifier changed unexpectedly.")
             }
         }
+    }
+
+    // MARK: - Signature verification
+
+    /// Validates the freshly-downloaded bundle before we let a deferred shell script overwrite the
+    /// running app. Three independent checks must all pass:
+    ///
+    /// 1. `codesign --verify --deep --strict` reports the staged bundle's signature is intact
+    ///    (catches tampering and broken bundles).
+    /// 2. `CFBundleIdentifier` in the staged Info.plist equals the running app's bundle ID
+    ///    (rejects "wrong app served from the same release").
+    /// 3. The staged bundle's signing identity (`codesign -dv` Identifier + TeamIdentifier) matches
+    ///    the running app's. This guards against a release that suddenly switched to a different
+    ///    Developer ID — an attacker who got `gh` credentials cannot also produce a build signed
+    ///    by Binky's existing key.
+    private func verifyStagedBundle(at stagedApp: URL) async throws {
+        // (1) Signature integrity.
+        do {
+            _ = try await shell("/usr/bin/codesign", ["--verify", "--deep", "--strict", "--no-strict=resource", stagedApp.path])
+        } catch let nsError as NSError {
+            let detail = (nsError.userInfo[NSLocalizedDescriptionKey] as? String) ?? "exit \(nsError.code)"
+            throw UpdateError.signatureInvalid(detail)
+        }
+
+        // (2) Bundle identifier match.
+        let expectedBID = Bundle.main.bundleIdentifier ?? "com.binky.app"
+        let stagedBID = readBundleIdentifier(at: stagedApp) ?? ""
+        guard stagedBID == expectedBID else {
+            throw UpdateError.bundleIdentifierMismatch(stagedBID)
+        }
+
+        // (3) Signing identity continuity.
+        // Skipped only for the very first install where the running app is unsigned (no codesign info).
+        let runningSig = (try? await codesignIdentity(for: Bundle.main.bundleURL)) ?? nil
+        let stagedSig = try await codesignIdentity(for: stagedApp)
+        if let running = runningSig {
+            guard let staged = stagedSig else { throw UpdateError.signingIdentityMismatch }
+            // Both team identifier AND signing identifier must match. Either one drifting is suspicious.
+            guard running.team == staged.team, running.identifier == staged.identifier else {
+                throw UpdateError.signingIdentityMismatch
+            }
+        }
+    }
+
+    private func readBundleIdentifier(at appURL: URL) -> String? {
+        let plistURL = appURL.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+        else { return nil }
+        return plist["CFBundleIdentifier"] as? String
+    }
+
+    private struct CodesignIdentity: Equatable {
+        let identifier: String   // "Identifier=..." (often the bundle id)
+        let team: String         // "TeamIdentifier=..." ("not set" for ad-hoc / unsigned)
+    }
+
+    private func codesignIdentity(for appURL: URL) async throws -> CodesignIdentity? {
+        let out: String
+        do {
+            // codesign -dv writes to stderr. Our shell helper merges stderr into stdout.
+            out = try await shell("/usr/bin/codesign", ["-dv", appURL.path])
+        } catch {
+            // Treat unsigned bundles (codesign exit 1) as "no identity" rather than fatal.
+            return nil
+        }
+        var identifier = ""
+        var team = ""
+        for line in out.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
+            let s = String(line)
+            if s.hasPrefix("Identifier=") {
+                identifier = String(s.dropFirst("Identifier=".count))
+            } else if s.hasPrefix("TeamIdentifier=") {
+                team = String(s.dropFirst("TeamIdentifier=".count))
+            }
+        }
+        if identifier.isEmpty && team.isEmpty { return nil }
+        return CodesignIdentity(identifier: identifier, team: team)
     }
 
     @discardableResult

@@ -526,7 +526,13 @@ public final class PerDestinationUniquifyGate: @unchecked Sendable {
 }
 
 private enum SortZipViaDitto {
-    /// Creates a zip at `zipDestinationURL` from `sourceFile`, then removes the source file on success.
+    /// Creates a zip at `zipDestinationURL` from `sourceFile`, verifies the produced archive is
+    /// readable, then removes the source on success.
+    ///
+    /// `ditto` returning exit 0 is necessary but not sufficient — a disk that fills mid-write or
+    /// a half-flushed APFS snapshot can leave a truncated archive that ditto still considers a
+    /// "successful" partial extract. We re-validate via `unzip -tq` before deleting the source so
+    /// a corrupt archive never silently destroys the original.
     static func zipReplacingSource(file sourceFile: URL, zipDestinationURL: URL) throws {
         let fm = FileManager.default
         if fm.fileExists(atPath: zipDestinationURL.path) {
@@ -544,7 +550,61 @@ private enum SortZipViaDitto {
                 userInfo: [NSLocalizedDescriptionKey: "Couldn’t create zip archive."]
             )
         }
+
+        try verifyZipIntegrity(at: zipDestinationURL)
+
         try fm.removeItem(at: sourceFile)
+    }
+
+    /// Throws if the zip is missing, empty, or fails `unzip -tq` (CRC mismatch, truncation, etc).
+    /// Cleans up the bad archive on failure so the caller can retry without colliding with itself.
+    private static func verifyZipIntegrity(at zipURL: URL) throws {
+        let fm = FileManager.default
+
+        // (1) Cheap size sanity check — a 0-byte file is never a valid zip and almost always means
+        // the disk filled before ditto could write the central directory.
+        let attrs = try fm.attributesOfItem(atPath: zipURL.path)
+        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        guard size > 0 else {
+            try? fm.removeItem(at: zipURL)
+            throw NSError(
+                domain: "BinkySortZip",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "Zip archive is empty after creation."]
+            )
+        }
+
+        // (2) Structural check via `unzip -tq` (system tool, available on every macOS).
+        let test = Process()
+        test.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        test.arguments = ["-tq", zipURL.path]
+        // Discard test output — `unzip -tq` prints "OK" on success, error detail on failure.
+        let devNull = FileHandle(forWritingAtPath: "/dev/null")
+        if let devNull {
+            test.standardOutput = devNull
+            test.standardError = devNull
+        }
+        do {
+            try test.run()
+        } catch {
+            // Should be impossible (unzip ships with macOS), but if the launch itself fails,
+            // err on the side of keeping the source file by treating the archive as bad.
+            try? fm.removeItem(at: zipURL)
+            throw NSError(
+                domain: "BinkySortZip",
+                code: -3,
+                userInfo: [NSLocalizedDescriptionKey: "Couldn’t verify zip archive: \(error.localizedDescription)"]
+            )
+        }
+        test.waitUntilExit()
+        guard test.terminationStatus == 0 else {
+            try? fm.removeItem(at: zipURL)
+            throw NSError(
+                domain: "BinkySortZip",
+                code: Int(test.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "Zip archive failed integrity check; original file kept."]
+            )
+        }
     }
 }
 

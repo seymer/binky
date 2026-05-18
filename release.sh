@@ -142,7 +142,8 @@ fi
 # ── 3. Build ──────────────────────────────────────────────────────────────────
 
 echo "→ Building Release…"
-xcodebuild -scheme Binky -configuration Release -derivedDataPath build clean build \
+xcodebuild -scheme Binky -configuration Release -derivedDataPath build \
+  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO clean build \
   | grep -E "error:|BUILD (SUCCEEDED|FAILED)"
 
 # ── 4. Create DMG ─────────────────────────────────────────────────────────────

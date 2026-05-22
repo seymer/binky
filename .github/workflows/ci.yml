@@ -20,7 +20,19 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
-      - name: Build and test
+
+      # BinkyCore SwiftPM tests run independently of the Xcode test bundle.
+      # This step is the v2 redesign's primary regression net for the new Pipeline /
+      # Suggestion / (eventually) Stage code that lives only in the SwiftPM package.
+      # It also lets BinkyCore-level failures surface even when the Xcode test
+      # runner is held up by the LaunchServices flake handled in the next step.
+      - name: BinkyCore SwiftPM tests
+        run: |
+          set -eo pipefail
+          cd BinkyCore
+          swift test --parallel
+
+      - name: Build and test (Xcode)
         run: |
           set -eo pipefail
           for attempt in 1 2 3; do

@@ -1,3 +1,7 @@
+> **Archived (Dinky-era).** Deployment guidance for the sibling site dinkyfiles.com,
+> not Binky. Retained for cross-reference if the family-site speed parity work is
+> revisited.
+
 # Dinky site parity — Binky↔Dinky tab speed
 
 The Binky marketing site (`site/`) prefetches **`https://dinkyfiles.com/`** on every page that shows the shared **Binky family** tabs, and [`netlify.toml`](../netlify.toml) adds cache hints for HTML vs static assets.

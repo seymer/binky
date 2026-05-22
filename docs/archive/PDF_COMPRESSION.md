@@ -1,3 +1,7 @@
+> **Archived (Dinky-era).** Binky does not compress PDFs; this document describes the
+> sister project [Dinky](https://dinkyfiles.com)'s pipeline. Kept here for historical
+> reference and because `tools/pdf_fixtures/` still ships some leftover fixtures.
+
 # PDF compression in Dinky
 
 ## Pipelines

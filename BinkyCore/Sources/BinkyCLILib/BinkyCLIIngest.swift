@@ -94,10 +94,22 @@ enum BinkyCLIIngestCommand {
             isDirectory: true
         ).standardizedFileURL
 
-        let pipeline = IngestionPipeline()
-        let adapter = HeuristicSuggestionAdapter(inboxRoot: { category in
+        let inboxRootResolver: InboxRootResolver = { category in
             inboxRoot.appendingPathComponent(category.downloadsSubfolder, isDirectory: true)
-        })
+        }
+
+        // Wire the engine with both adapters configured today. FoundationModels
+        // returns [] until macOS 26 + Apple Intelligence is on the path; passing
+        // it now keeps the CLI output stable when that adapter starts producing
+        // real suggestions later.
+        let pipeline = IngestionPipeline()
+        let engine = SuggestionEngine(
+            pipeline: pipeline,
+            adapters: [
+                HeuristicSuggestionAdapter(inboxRoot: inboxRootResolver),
+                FoundationModelsSuggestionAdapter(inboxRoot: inboxRootResolver),
+            ]
+        )
 
         var anyFailure = false
         let fm = FileManager.default
@@ -115,11 +127,12 @@ enum BinkyCLIIngestCommand {
 
             let outcome = BinkyCLIAsync.runBlocking { () -> Result<(IngestedFile, [Suggestion]), Error> in
                 do {
+                    // The engine ingests + runs adapters + merges in one call.
+                    // We re-ingest separately for the text/JSON view because
+                    // we want to surface category/host/SHA-256 alongside the
+                    // engine's final merged suggestions.
                     let ingested = try await pipeline.ingest(url)
-                    let suggestions = try await adapter.suggest(
-                        for: ingested,
-                        context: PipelineContext()
-                    )
+                    let suggestions = await engine.suggest(for: ingested, context: PipelineContext())
                     return .success((ingested, suggestions))
                 } catch {
                     return .failure(error)

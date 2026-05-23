@@ -623,7 +623,6 @@
       }
     },
     "%lld%%" : {
-      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -1432,9 +1431,6 @@
           }
         }
       }
-    },
-    "Apply" : {
-
     },
     "Apply %@ (%lld)" : {
       "localizations" : {
@@ -3649,9 +3645,6 @@
         }
       }
     },
-    "Destinations" : {
-
-    },
     "Detect receipts and invoices" : {
       "comment" : "Settings.",
       "localizations" : {
@@ -4499,9 +4492,6 @@
           }
         }
       }
-    },
-    "Files go to the matching category folder. Unknown files go to Review." : {
-
     },
     "Files in Review didn’t match a rule. Move them, teach Binky a new rule, or trash." : {
       "comment" : "Review triage subtitle.",
@@ -8009,6 +7999,9 @@
         }
       }
     },
+    "Other…" : {
+
+    },
     "Output extension: .%@" : {
       "comment" : "NL preview field.",
       "localizations" : {
@@ -9004,9 +8997,6 @@
           }
         }
       }
-    },
-    "Rejected" : {
-
     },
     "Relative path under sort root (empty = “Folders”)" : {
       "comment" : "Loose folder destination path.",

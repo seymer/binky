@@ -464,21 +464,36 @@ struct DailyCalmPreviewSheet: View {
         let fallbackRoot = sources.first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
         let predictor = DestinationPredictor(fallbackRoot: fallbackRoot)
         let resolver: InboxRootResolver = { category in fallbackRoot.appendingPathComponent(category.downloadsSubfolder, isDirectory: true) }
-        let engine = SuggestionEngine(
-            adapters: [
-                HeuristicSuggestionAdapter(inboxRoot: resolver, predictor: predictor),
-                FoundationModelsSuggestionAdapter(inboxRoot: resolver),
-            ]
-        )
+
+        // Lightweight scan: classify + origin only (milliseconds per file).
+        // Hash is skipped during scan — it's expensive (full file read) and
+        // only needed for duplicate detection, which we defer to a separate
+        // "Find duplicates" action the user can trigger explicitly.
+        let classifyStage = ClassifyStage()
+        let originStage = OriginHostStage()
+        let adapter = HeuristicSuggestionAdapter(inboxRoot: resolver, predictor: predictor)
         let store = SuggestionStore.shared
+        let ctx = PipelineContext()
 
         var cards: [SuggestionCardModel] = []
         var alreadyDecided = 0
-        var hashBySHA: [String: URL] = [:]
-        var dupeGroups: [String: [URL]] = [:]
 
         for url in allFiles {
-            guard let suggestions = try? await engine.suggest(for: url) else { continue }
+            guard !Task.isCancelled else { break }
+            // Lightweight ingestion: no hash, no full file read.
+            let classified = try? await classifyStage.run(url, context: ctx)
+            let hosts = try? await originStage.run(url, context: ctx)
+
+            guard let classified, let hosts else { continue }
+
+            let ingested = IngestedFile(
+                url: url,
+                classification: classified,
+                originHosts: hosts,
+                hashed: nil  // deliberately nil — hash deferred
+            )
+
+            let suggestions = (try? await adapter.suggest(for: ingested, context: ctx)) ?? []
             for s in suggestions {
                 if store.decision(for: s) != nil {
                     alreadyDecided += 1
@@ -486,22 +501,9 @@ struct DailyCalmPreviewSheet: View {
                 }
                 cards.append(SuggestionCardModel(suggestion: s))
             }
-            // Duplicate detection: group by SHA-256
-            if let ingested = try? await IngestionPipeline().ingest(url),
-               let hash = ingested.hashed?.sha256 {
-                if let existing = hashBySHA[hash] {
-                    dupeGroups[hash, default: [existing]].append(url)
-                } else {
-                    hashBySHA[hash] = url
-                }
-            }
         }
 
-        let duplicates = dupeGroups.map { (_, urls) in
-            DuplicateGroup(files: urls)
-        }
-
-        return ScanResult(cards: cards, duplicates: duplicates, fileCount: allFiles.count, alreadyDecided: alreadyDecided)
+        return ScanResult(cards: cards, duplicates: [], fileCount: allFiles.count, alreadyDecided: alreadyDecided)
     }
 }
 

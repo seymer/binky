@@ -1,278 +1,493 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
-/// **Read-only** Daily Calm preview. Scans a folder, runs the v2
-/// `SuggestionEngine`, and renders the resulting `[Suggestion]` as cards —
-/// nothing is moved on disk, nothing is persisted to history.
+// MARK: - Main View
+
+/// Binky 2.0 main window. Replaces the v1 OrganizerMainView entirely.
 ///
-/// This is the first UI-visible touchpoint for the Calm Inbox redesign.
-/// It is intentionally hidden behind a debug flag (`v2.dailyCalmPreviewEnabled`)
-/// so the production app surface is unchanged for normal users; developers
-/// and beta testers flip the flag in `defaults` to evaluate the v2 direction
-/// without committing to anything.
-///
-/// What the user sees:
-///   - A folder well at the top (defaults to `~/Downloads`).
-///   - A "Run preview" action that scans the folder, runs `SuggestionEngine`,
-///     and renders one `SuggestionCard` per proposal.
-///   - Apply / Skip / Reject buttons on each card that record the decision
-///     in local state but **do not** move files. A footer banner makes the
-///     dry-run nature explicit so testers can't mistake it for the real
-///     thing.
+/// Flow: Select sources → Configure destinations → Scan → Review suggestions → Apply.
 struct DailyCalmPreviewSheet: View {
     @EnvironmentObject var prefs: BinkyPreferences
 
-    @State private var sourceURL: URL = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appendingPathComponent("Downloads", isDirectory: true)
+    // MARK: State
 
-    /// Sync source folder from prefs on first appear.
-    private var initialSourceFromPrefs: URL {
-        prefs.activeSortSweepRootDirectory()
-    }
+    @State private var sources: [URL] = []
+    @State private var includeSubfolders: Bool = true
+    @State private var destinationMapping: DestinationMapping = .default
 
     @State private var suggestions: [SuggestionCardModel] = []
-    @State private var isLoading: Bool = false
-    @State private var errorMessage: String? = nil
-    @State private var lastScanCount: Int = 0
+    @State private var duplicates: [DuplicateGroup] = []
+    @State private var isScanning: Bool = false
+    @State private var lastScanFileCount: Int = 0
     @State private var lastAlreadyDecidedCount: Int = 0
+    @State private var errorMessage: String? = nil
+
+    @State private var filterCategory: FileSortCategory? = nil
+    @State private var isDropTargeted: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            sourceWell
-            content
+        VStack(spacing: 0) {
+            headerBar
             Divider()
-            footer
+            HSplitView {
+                configPanel
+                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 320)
+                resultsPanel
+                    .frame(minWidth: 400)
+            }
+            Divider()
+            footerBar
         }
-        .padding(22)
-        .frame(minWidth: 640, minHeight: 480)
-        .task {
-            // Use the user's configured watch folder as the default scan source.
-            sourceURL = initialSourceFromPrefs
-            await runPreview()
+        .frame(minWidth: 720, minHeight: 520)
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers)
+            return true
         }
+        .overlay(dropOverlay)
+        .task { initializeFromPrefs() }
     }
 
-    // MARK: - Sections
+    // MARK: - Header
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Daily Calm — preview")
-                    .font(.title2)
-                Text("v2 alpha · Apply moves files for real")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+    private var headerBar: some View {
+        HStack {
+            Text("Binky")
+                .font(.title2.bold())
             Spacer()
             Button {
-                Task { await runPreview() }
+                Task { await scan() }
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                Label("Scan", systemImage: "magnifyingglass")
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(sources.isEmpty || isScanning)
             .keyboardShortcut("r", modifiers: [.command])
-            .disabled(isLoading)
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
     }
 
-    private var sourceWell: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "folder.fill")
-                .font(.title3)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(sourceURL.lastPathComponent)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(sourceURL.path)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    // MARK: - Config Panel (left)
+
+    private var configPanel: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                sourcesSection
+                Divider()
+                destinationsSection
             }
-            Spacer()
-            Button("Choose folder…") {
-                chooseFolder()
-            }
-            .buttonStyle(.borderless)
+            .padding(16)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.05))
-        )
+        .background(Color.primary.opacity(0.02))
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if isLoading {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Scanning \(sourceURL.lastPathComponent)…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let errorMessage {
-            VStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(.orange)
-                Text("Couldn't run the preview")
-                    .font(.headline)
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if suggestions.isEmpty && lastScanCount == 0 {
-            // Pre-first-run state. Different from "ran but found nothing" so
-            // testers don't mistake an unstarted preview for a clean folder.
-            VStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 32))
-                    .foregroundStyle(.tertiary)
-                Text("Click Refresh to run the v2 pipeline")
-                    .font(.headline)
-                Text("Daily Calm reads files from the folder above and proposes where they'd go.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if suggestions.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(.green)
-                Text("Folder calm.")
-                    .font(.headline)
-                Text("Scanned \(lastScanCount) file(s); the engine had no proposals.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach($suggestions) { $card in
-                        SuggestionCard(card: $card)
+    private var sourcesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Sources", systemImage: "folder.badge.plus")
+                .font(.headline)
+
+            ForEach(sources, id: \.self) { url in
+                HStack {
+                    Image(systemName: "folder.fill")
+                        .foregroundStyle(.tint)
+                    Text(shortenPath(url.path))
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button { sources.removeAll { $0 == url } } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.vertical, 4)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if sources.isEmpty {
+                Text("Drop folders here or click + to add.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("+ Add folder") { addSource() }
+                    .buttonStyle(.borderless)
+                Button("+ Add files") { addFiles() }
+                    .buttonStyle(.borderless)
+            }
+
+            Toggle("Include subfolders", isOn: $includeSubfolders)
+                .font(.caption)
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Image(systemName: "bolt.fill")
-                .foregroundStyle(.orange)
-            Text("Apply moves files for real. Skip/Reject only record your preference.")
+    private var destinationsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Destinations", systemImage: "arrow.right.doc.on.clipboard")
+                .font(.headline)
+
+            ForEach(DestinationMapping.editableCategories, id: \.self) { category in
+                HStack {
+                    Text(category.rawValue.capitalized)
+                        .font(.caption.bold())
+                        .frame(width: 80, alignment: .leading)
+                    Text(shortenPath(destinationMapping.path(for: category).path))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button("…") { pickDestination(for: category) }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
+
+            Text("Files go to the matching category folder. Unknown files go to Review.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    // MARK: - Results Panel (right)
+
+    private var resultsPanel: some View {
+        VStack(spacing: 0) {
+            if isScanning {
+                Spacer()
+                ProgressView("Scanning…")
+                Spacer()
+            } else if let error = errorMessage {
+                Spacer()
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Spacer()
+            } else if suggestions.isEmpty && duplicates.isEmpty && lastScanFileCount == 0 {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.tertiary)
+                    Text("Add sources and hit Scan")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            } else if suggestions.isEmpty && duplicates.isEmpty {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.green)
+                    Text("All clear.")
+                        .font(.headline)
+                }
+                Spacer()
+            } else {
+                filterBar
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        if !duplicates.isEmpty {
+                            duplicateSection
+                        }
+                        ForEach($suggestions.filter { card in
+                            filterCategory == nil || card.wrappedValue.suggestion.source.pathExtension.isEmpty == false
+                        }) { $card in
+                            if matchesFilter(card) {
+                                SuggestionRow(card: $card)
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+            }
+        }
+    }
+
+    private var filterBar: some View {
+        HStack(spacing: 12) {
+            Text("Filter:")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            filterButton("All", isActive: filterCategory == nil) { filterCategory = nil }
+            ForEach(activeCategories, id: \.self) { cat in
+                filterButton(cat.rawValue.capitalized, isActive: filterCategory == cat) { filterCategory = cat }
+            }
             Spacer()
-            if lastAlreadyDecidedCount > 0 {
-                Text("\(lastAlreadyDecidedCount) already decided")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Button("Forget all") {
-                    SuggestionStore.shared.clearAll()
-                    Task { await runPreview() }
+            batchApplyMenu
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.03))
+    }
+
+    private var batchApplyMenu: some View {
+        Menu {
+            Button("Apply all (\(pendingSuggestions.count))") { batchApply(filter: nil) }
+            Divider()
+            ForEach(activeCategories, id: \.self) { cat in
+                let count = pendingSuggestions.filter { categorize($0) == cat }.count
+                if count > 0 {
+                    Button("Apply \(cat.rawValue.capitalized) (\(count))") { batchApply(filter: cat) }
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
             }
-            if lastScanCount > 0 {
-                Text("\(suggestions.count) pending · \(lastScanCount) file(s)")
+        } label: {
+            Label("Apply…", systemImage: "checkmark.circle.fill")
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(pendingSuggestions.isEmpty)
+    }
+
+    @ViewBuilder
+    private var duplicateSection: some View {
+        Section {
+            ForEach($duplicates) { $group in
+                DuplicateCard(group: $group)
+            }
+        } header: {
+            Label("Duplicates found", systemImage: "doc.on.doc.fill")
+                .font(.subheadline.bold())
+                .foregroundStyle(.orange)
+                .padding(.bottom, 4)
+        }
+    }
+
+    // MARK: - Footer
+
+    private var footerBar: some View {
+        HStack {
+            if lastScanFileCount > 0 {
+                Text("\(lastScanFileCount) scanned · \(suggestions.count) suggestions · \(duplicates.count) duplicate groups")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+                if lastAlreadyDecidedCount > 0 {
+                    Text("· \(lastAlreadyDecidedCount) already decided")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Button("Reset") {
+                        SuggestionStore.shared.clearAll()
+                        Task { await scan() }
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
             }
+            Spacer()
+            Text("Apply moves files for real.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Drop overlay
+
+    @ViewBuilder
+    private var dropOverlay: some View {
+        if isDropTargeted {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                .background(Color.accentColor.opacity(0.05))
+                .overlay(
+                    Label("Drop to add sources", systemImage: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                )
+                .padding(8)
         }
     }
 
     // MARK: - Actions
 
-    private func chooseFolder() {
+    private func initializeFromPrefs() {
+        let defaultSource = prefs.activeSortSweepRootDirectory()
+        if sources.isEmpty {
+            sources = [defaultSource]
+        }
+        destinationMapping = DestinationMapping.fromPrefs(root: defaultSource)
+    }
+
+    private func addSource() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK {
+            for url in panel.urls where !sources.contains(url) {
+                sources.append(url)
+            }
+        }
+    }
+
+    private func addFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK {
+            for url in panel.urls where !sources.contains(url) {
+                sources.append(url)
+            }
+            Task { await scan() }
+        }
+    }
+
+    private func pickDestination(for category: FileSortCategory) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.directoryURL = sourceURL
+        panel.directoryURL = destinationMapping.path(for: category)
         if panel.runModal() == .OK, let url = panel.url {
-            sourceURL = url
-            Task { await runPreview() }
+            destinationMapping.set(url, for: category)
+        }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                guard let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                DispatchQueue.main.async {
+                    if !sources.contains(url) {
+                        sources.append(url)
+                    }
+                }
+            }
+        }
+        // Auto-scan after drop
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            Task { await scan() }
         }
     }
 
     @MainActor
-    private func runPreview() async {
-        guard !isLoading else { return }
-        isLoading = true
+    private func scan() async {
+        guard !isScanning, !sources.isEmpty else { return }
+        isScanning = true
         errorMessage = nil
-        defer { isLoading = false }
-
-        let folder = sourceURL
-        // Use the user's configured inbox root from Preferences (same root
-        // v1 sorts into). Falls back to ~/Downloads if nothing is configured.
-        let inboxRoot = prefs.activeSortSweepRootDirectory()
+        defer { isScanning = false }
 
         do {
-            let result = try await Self.scanAndSuggest(folder: folder, inboxRoot: inboxRoot)
-            self.suggestions = result.cards
-            self.lastScanCount = result.scannedCount
-            self.lastAlreadyDecidedCount = result.alreadyDecidedCount
+            let result = try await Self.performScan(
+                sources: sources,
+                includeSubfolders: includeSubfolders,
+                mapping: destinationMapping
+            )
+            suggestions = result.cards
+            duplicates = result.duplicates
+            lastScanFileCount = result.fileCount
+            lastAlreadyDecidedCount = result.alreadyDecided
         } catch {
-            self.errorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
 
-    /// Pulled out as a `nonisolated static` so the heavy work runs off the
-    /// main actor — keeps the SwiftUI view thread responsive while the engine
-    /// hashes potentially-large files. The view-side bookkeeping (suggestions,
-    /// error, isLoading) is updated back on the main actor by the caller.
-    ///
-    /// **Filter rule:** suggestions that already have a persisted decision
-    /// in `SuggestionStore` (accepted / rejected / snoozed) are dropped from
-    /// the card list. The whole point of recording decisions is so Daily Calm
-    /// stops nagging — re-asking about a file the user already rejected
-    /// would defeat the trust-first design.
-    nonisolated private static func scanAndSuggest(
-        folder: URL,
-        inboxRoot: URL
-    ) async throws -> (cards: [SuggestionCardModel], scannedCount: Int, alreadyDecidedCount: Int) {
+    private func batchApply(filter: FileSortCategory?) {
+        let executor = SuggestionExecutor()
+        for i in suggestions.indices {
+            guard suggestions[i].localDecision == .pending else { continue }
+            if let filter, categorize(suggestions[i]) != filter { continue }
+            let result = executor.execute(suggestions[i].suggestion)
+            if result.succeeded {
+                suggestions[i].localDecision = .applied
+                suggestions[i].executionResult = {
+                    if case .success(let p) = result.outcome { return p }
+                    return nil
+                }()
+                SuggestionStore.shared.record(suggestions[i].suggestion, decision: .accepted)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var pendingSuggestions: [SuggestionCardModel] {
+        suggestions.filter { $0.localDecision == .pending }
+    }
+
+    private var activeCategories: [FileSortCategory] {
+        let cats = Set(suggestions.map { categorize($0) })
+        return FileSortCategory.allCases.filter { cats.contains($0) }
+    }
+
+    private func categorize(_ card: SuggestionCardModel) -> FileSortCategory {
+        // Derive category from the suggestion's destination path
+        if case .move(let dest) = card.suggestion.action {
+            let last = dest.lastPathComponent.lowercased()
+            return FileSortCategory.allCases.first { $0.downloadsSubfolder.lowercased() == last } ?? .misc
+        }
+        return .misc
+    }
+
+    private func matchesFilter(_ card: SuggestionCardModel) -> Bool {
+        guard let filter = filterCategory else { return true }
+        return categorize(card) == filter
+    }
+
+    private func shortenPath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    @ViewBuilder
+    private func filterButton(_ label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        if isActive {
+            Button(label, action: action).buttonStyle(.borderedProminent).controlSize(.small)
+        } else {
+            Button(label, action: action).buttonStyle(.bordered).controlSize(.small)
+        }
+    }
+
+    // MARK: - Scan logic
+
+    nonisolated private static func performScan(
+        sources: [URL],
+        includeSubfolders: Bool,
+        mapping: DestinationMapping
+    ) async throws -> ScanResult {
         let fm = FileManager.default
-        let entries = try fm.contentsOfDirectory(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        )
-        let regularFiles = entries.filter { url in
-            (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        var allFiles: [URL] = []
+
+        for source in sources {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: source.path, isDirectory: &isDir) else { continue }
+            if isDir.boolValue {
+                let options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles]
+                if includeSubfolders {
+                    if let enumerator = fm.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey], options: options) {
+                        for case let url as URL in enumerator {
+                            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                                allFiles.append(url)
+                            }
+                        }
+                    }
+                } else {
+                    let entries = (try? fm.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isRegularFileKey], options: options)) ?? []
+                    allFiles.append(contentsOf: entries.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true })
+                }
+            } else {
+                allFiles.append(source)
+            }
         }
 
-        let inboxRootResolver: InboxRootResolver = { category in
-            inboxRoot.appendingPathComponent(category.downloadsSubfolder, isDirectory: true)
-        }
+        let resolver: InboxRootResolver = { category in mapping.path(for: category) }
         let engine = SuggestionEngine(
             adapters: [
-                HeuristicSuggestionAdapter(inboxRoot: inboxRootResolver),
-                FoundationModelsSuggestionAdapter(inboxRoot: inboxRootResolver),
+                HeuristicSuggestionAdapter(inboxRoot: resolver),
+                FoundationModelsSuggestionAdapter(inboxRoot: resolver),
             ]
         )
         let store = SuggestionStore.shared
 
         var cards: [SuggestionCardModel] = []
         var alreadyDecided = 0
-        for url in regularFiles {
-            // Adapter errors are absorbed inside the engine; only ingestion
-            // throws here. Skip individual failures so one bad file doesn't
-            // wipe the whole preview list.
+        var hashBySHA: [String: URL] = [:]
+        var dupeGroups: [String: [URL]] = [:]
+
+        for url in allFiles {
             guard let suggestions = try? await engine.suggest(for: url) else { continue }
             for s in suggestions {
                 if store.decision(for: s) != nil {
@@ -281,107 +496,125 @@ struct DailyCalmPreviewSheet: View {
                 }
                 cards.append(SuggestionCardModel(suggestion: s))
             }
+            // Duplicate detection: group by SHA-256
+            if let ingested = try? await IngestionPipeline().ingest(url),
+               let hash = ingested.hashed?.sha256 {
+                if let existing = hashBySHA[hash] {
+                    dupeGroups[hash, default: [existing]].append(url)
+                } else {
+                    hashBySHA[hash] = url
+                }
+            }
         }
-        return (cards, regularFiles.count, alreadyDecided)
+
+        let duplicates = dupeGroups.map { (_, urls) in
+            DuplicateGroup(files: urls)
+        }
+
+        return ScanResult(cards: cards, duplicates: duplicates, fileCount: allFiles.count, alreadyDecided: alreadyDecided)
     }
 }
 
-// MARK: - Card model + view
+// MARK: - Models
 
-/// Local UI state for a single Daily Calm card. We deliberately don't
-/// mutate the `Suggestion` itself — the engine treats `Suggestion` as
-/// immutable per call, so per-render state lives here instead.
-struct SuggestionCardModel: Identifiable {
-    let id: UUID
-    let suggestion: Suggestion
-    var localDecision: LocalDecision = .pending
-    /// Set after a successful Apply — the actual destination path on disk.
-    var executionResult: String? = nil
-    /// Set when Apply fails — human-readable error reason.
-    var executionError: String? = nil
+private struct ScanResult {
+    let cards: [SuggestionCardModel]
+    let duplicates: [DuplicateGroup]
+    let fileCount: Int
+    let alreadyDecided: Int
+}
 
-    enum LocalDecision: Equatable {
-        case pending
-        case applied
-        case skipped
-        case rejected
+struct DuplicateGroup: Identifiable {
+    let id = UUID()
+    var files: [URL]
+    var resolved: Bool = false
+}
+
+/// Maps each FileSortCategory to a user-chosen destination folder.
+struct DestinationMapping {
+    private var map: [FileSortCategory: URL]
+
+    static let editableCategories: [FileSortCategory] = [
+        .images, .pdf, .video, .audio, .documents, .archives, .apps, .screenshots, .misc
+    ]
+
+    static var `default`: DestinationMapping {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let downloads = home.appendingPathComponent("Downloads", isDirectory: true)
+        return fromPrefs(root: downloads)
     }
 
-    init(suggestion: Suggestion) {
-        self.id = suggestion.id
-        self.suggestion = suggestion
+    static func fromPrefs(root: URL) -> DestinationMapping {
+        var m: [FileSortCategory: URL] = [:]
+        for cat in FileSortCategory.allCases {
+            m[cat] = root.appendingPathComponent(cat.downloadsSubfolder, isDirectory: true)
+        }
+        return DestinationMapping(map: m)
+    }
+
+    func path(for category: FileSortCategory) -> URL {
+        map[category] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads/Misc", isDirectory: true)
+    }
+
+    mutating func set(_ url: URL, for category: FileSortCategory) {
+        map[category] = url
     }
 }
 
-private struct SuggestionCard: View {
+// MARK: - Suggestion Row
+
+private struct SuggestionRow: View {
     @Binding var card: SuggestionCardModel
 
-    private var s: Suggestion { card.suggestion }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Image(systemName: actionIcon)
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-                Text(s.source.lastPathComponent)
-                    .font(.system(size: 13, weight: .semibold))
+        HStack(spacing: 12) {
+            Image(systemName: iconName)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(card.suggestion.source.lastPathComponent)
+                    .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                if let confidence = s.confidence {
-                    Text(String(format: "%.0f%%", confidence * 100))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                Text(card.suggestion.reasoning)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
-            Text(actionDescription)
-                .font(.subheadline)
+            Spacer()
 
-            Text(s.reasoning)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                Group {
-                    decisionButton(label: "Apply", target: .applied, role: nil, prominent: true)
-                    decisionButton(label: "Skip", target: .skipped, role: .cancel, prominent: false)
-                    decisionButton(label: "Reject", target: .rejected, role: .destructive, prominent: false)
-                }
-                .disabled(card.localDecision != .pending)
-
-                Spacer()
-
-                if let error = card.executionError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                } else if let dest = card.executionResult {
-                    Label("Moved → \(shortenPath(dest))", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                } else if card.localDecision != .pending {
-                    Text(decisionLabel)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(decisionColor)
-                }
+            if let result = card.executionResult {
+                Label(shortenPath(result), systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .lineLimit(1)
+            } else if let error = card.executionError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            } else if card.localDecision == .pending {
+                Button("Apply") { applyOne() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                Button("Skip") { skip() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            } else {
+                Text(card.localDecision == .skipped ? "Skipped" : "Rejected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
     }
 
-    private var actionIcon: String {
-        switch s.action {
+    private var iconName: String {
+        switch card.suggestion.action {
         case .move: return "folder.fill"
         case .rename: return "pencil"
         case .trash: return "trash"
@@ -390,108 +623,106 @@ private struct SuggestionCard: View {
         }
     }
 
-    private var actionDescription: String {
-        switch s.action {
-        case .move(let dest):
-            return "Move → \(humanReadablePath(dest))"
-        case .rename(let name):
-            return "Rename → \(name)"
-        case .trash:
-            return "Move to Trash"
-        case .keep:
-            return "Keep where it is"
-        case .runShortcut(let name):
-            return "Run Shortcut: \(name)"
+    private func applyOne() {
+        let executor = SuggestionExecutor()
+        let result = executor.execute(card.suggestion)
+        switch result.outcome {
+        case .success(let path):
+            card.localDecision = .applied
+            card.executionResult = path
+            SuggestionStore.shared.record(card.suggestion, decision: .accepted)
+        case .kept:
+            card.localDecision = .applied
+            card.executionResult = "(kept)"
+            SuggestionStore.shared.record(card.suggestion, decision: .accepted)
+        case .failure(let reason):
+            card.executionError = reason
         }
     }
 
-    private func humanReadablePath(_ url: URL) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if url.path.hasPrefix(home) {
-            return "~" + url.path.dropFirst(home.count)
-        }
-        return url.path
+    private func skip() {
+        card.localDecision = .skipped
+        SuggestionStore.shared.record(card.suggestion, decision: .snoozed)
     }
 
     private func shortenPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if path.hasPrefix(home) {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
+}
 
-    @ViewBuilder
-    private func decisionButton(
-        label: String,
-        target: SuggestionCardModel.LocalDecision,
-        role: ButtonRole?,
-        prominent: Bool
-    ) -> some View {
-        if prominent {
-            Button(role: role) { applyDecision(target) } label: { Text(label) }
-                .buttonStyle(.borderedProminent)
-        } else {
-            Button(role: role) { applyDecision(target) } label: { Text(label) }
-                .buttonStyle(.bordered)
-        }
-    }
+// MARK: - Duplicate Card
 
-    /// Updates the card's in-window state AND persists the corresponding
-    /// `UserDecision` to `SuggestionStore`. For `.applied`, also executes the
-    /// proposed action via `SuggestionExecutor` — **this actually moves/renames/
-    /// trashes the file on disk**.
-    ///
-    /// `LocalDecision → UserDecision` mapping:
-    ///   - applied  → .accepted (user OK'd this proposal) + execute action
-    ///   - skipped  → .snoozed  (not now, ask again later)
-    ///   - rejected → .rejected (don't ask again about this proposal)
-    ///   - pending  → no persistence (shouldn't happen via this button)
-    private func applyDecision(_ target: SuggestionCardModel.LocalDecision) {
-        card.localDecision = target
-        let user: UserDecision?
-        switch target {
-        case .pending:  user = nil
-        case .applied:  user = .accepted
-        case .skipped:  user = .snoozed
-        case .rejected: user = .rejected
-        }
-        if let user {
-            SuggestionStore.shared.record(card.suggestion, decision: user)
-        }
+private struct DuplicateCard: View {
+    @Binding var group: DuplicateGroup
 
-        // Execute the real filesystem action when the user clicks Apply.
-        if target == .applied {
-            let executor = SuggestionExecutor()
-            let result = executor.execute(card.suggestion)
-            switch result.outcome {
-            case .success(let destPath):
-                card.executionResult = destPath
-            case .kept:
-                card.executionResult = "(kept in place)"
-            case .failure(let reason):
-                card.executionError = reason
-                // Revert the visual state so the user can retry or skip.
-                card.localDecision = .pending
+    var body: some View {
+        if group.resolved { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                Label("\(group.files.count) identical files", systemImage: "doc.on.doc.fill")
+                    .font(.caption.bold())
+                    .foregroundStyle(.orange)
+                ForEach(group.files, id: \.self) { url in
+                    Text(url.path)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                HStack {
+                    Button("Keep newest") { resolveKeepNewest() }
+                        .controlSize(.small)
+                    Button("Keep first") { resolveKeepFirst() }
+                        .controlSize(.small)
+                    Button("Keep all") { group.resolved = true }
+                        .controlSize(.small)
+                }
             }
-        }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.3)))
+        )
     }
 
-    private var decisionLabel: String {
-        switch card.localDecision {
-        case .pending: return ""
-        case .applied: return "✓ Applied (preview only)"
-        case .skipped: return "Skipped"
-        case .rejected: return "Rejected"
+    private func resolveKeepNewest() {
+        let fm = FileManager.default
+        let sorted = group.files.sorted { a, b in
+            let da = (try? fm.attributesOfItem(atPath: a.path)[.modificationDate] as? Date) ?? .distantPast
+            let db = (try? fm.attributesOfItem(atPath: b.path)[.modificationDate] as? Date) ?? .distantPast
+            return da > db
         }
+        trashAllExcept(sorted.first)
     }
 
-    private var decisionColor: Color {
-        switch card.localDecision {
-        case .pending: return .secondary
-        case .applied: return .green
-        case .skipped: return .secondary
-        case .rejected: return .red
+    private func resolveKeepFirst() {
+        trashAllExcept(group.files.first)
+    }
+
+    private func trashAllExcept(_ keep: URL?) {
+        let fm = FileManager.default
+        for url in group.files where url != keep {
+            try? fm.trashItem(at: url, resultingItemURL: nil)
         }
+        group.resolved = true
+    }
+}
+
+// MARK: - Card Model (reused)
+
+struct SuggestionCardModel: Identifiable {
+    let id: UUID
+    let suggestion: Suggestion
+    var localDecision: LocalDecision = .pending
+    var executionResult: String? = nil
+    var executionError: String? = nil
+
+    enum LocalDecision: Equatable {
+        case pending, applied, skipped, rejected
+    }
+
+    init(suggestion: Suggestion) {
+        self.id = suggestion.id
+        self.suggestion = suggestion
     }
 }

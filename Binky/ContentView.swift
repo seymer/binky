@@ -15,6 +15,7 @@ struct ContentView: View {
 
     @State private var showingHistorySheet = false
     @ObservedObject private var diagnostics = DiagnosticsReporter.shared
+    @AppStorage("binky.onboarding.v2.completed") private var onboardingCompleted = false
 
     init(vm: OrganizerViewModel) {
         self.vm = vm
@@ -70,6 +71,12 @@ struct ContentView: View {
                 vm.pendingSortOutcome = nil
                 diagnostics.pendingCrashReport = nil
                 showingHistorySheet = false
+            }
+            .sheet(isPresented: Binding(
+                get: { !onboardingCompleted },
+                set: { if !$0 { onboardingCompleted = true } }
+            )) {
+                OnboardingSheet()
             }
     }
 

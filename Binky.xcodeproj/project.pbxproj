@@ -34,6 +34,7 @@
 		NTEXP002000000000000001 /* NewTagExpiry.swift in Sources */ = {isa = PBXBuildFile; fileRef = NTEXP102000000000000001 /* NewTagExpiry.swift */; };
 		SPSH0020000000000000001 /* SortPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SPSH0010000000000000001 /* SortPreviewSheet.swift */; };
 		DCPS0020000000000000001 /* DailyCalmPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCPS0010000000000000001 /* DailyCalmPreviewSheet.swift */; };
+		ONBD0020000000000000001 /* OnboardingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ONBD0010000000000000001 /* OnboardingSheet.swift */; };
 		FW000001000000000000001 /* FolderWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = FW100001000000000000001 /* FolderWatcher.swift */; };
 		WR000001000000000000001 /* WatchRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WR100001000000000000001 /* WatchRegistry.swift */; };
 		GH000001000000000000001 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = GH100001000000000000001 /* GlobalHotkeyManager.swift */; };
@@ -103,6 +104,7 @@
 		RVTRI10001FR000001 /* ReviewFolderTriageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFolderTriageSheet.swift; sourceTree = "<group>"; };
 		SPSH0010000000000000001 /* SortPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortPreviewSheet.swift; sourceTree = "<group>"; };
 		DCPS0010000000000000001 /* DailyCalmPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyCalmPreviewSheet.swift; sourceTree = "<group>"; };
+		ONBD0010000000000000001 /* OnboardingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSheet.swift; sourceTree = "<group>"; };
 		E71A34AFC5CA41FDACAEE19D /* Preview Content/Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Content/Preview Assets.xcassets"; sourceTree = "<group>"; };
 		F5D3DAE858994431BC84C13F /* BinkyPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinkyPreferences.swift; sourceTree = "<group>"; };
 		BKSRURF00000100000001 /* SortRule+ReviewDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SortRule+ReviewDraft.swift"; sourceTree = "<group>"; };
@@ -111,17 +113,9 @@
 		FILHS10001FR000001 /* FileHashStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHashStore.swift; sourceTree = "<group>"; };
 		FW100001000000000000001 /* FolderWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcher.swift; sourceTree = "<group>"; };
 		GH100001000000000000001 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
-		HMDE0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = de.lproj/Help.md; sourceTree = "<group>"; };
 		HMEN0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = en.lproj/Help.md; sourceTree = "<group>"; };
 		HMES0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = es.lproj/Help.md; sourceTree = "<group>"; };
-		HMFR0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = fr.lproj/Help.md; sourceTree = "<group>"; };
-		HMIT0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = it.lproj/Help.md; sourceTree = "<group>"; };
 		HMJA0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = ja.lproj/Help.md; sourceTree = "<group>"; };
-		HMKO0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = ko.lproj/Help.md; sourceTree = "<group>"; };
-		HMNL0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = nl.lproj/Help.md; sourceTree = "<group>"; };
-		HMPT0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = "pt-BR.lproj/Help.md"; sourceTree = "<group>"; };
-		HMRU0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = ru.lproj/Help.md; sourceTree = "<group>"; };
-		HMTR0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = tr.lproj/Help.md; sourceTree = "<group>"; };
 		HMZH0000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = "zh-Hans.lproj/Help.md"; sourceTree = "<group>"; };
 		HMZHT000000000000000001 /* Help.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = Help.md; path = "zh-Hant.lproj/Help.md"; sourceTree = "<group>"; };
 		HS100001000000000000001 /* HistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistorySheet.swift; sourceTree = "<group>"; };
@@ -184,6 +178,7 @@
 			children = (
 				SPSH0010000000000000001 /* SortPreviewSheet.swift */,
 				DCPS0010000000000000001 /* DailyCalmPreviewSheet.swift */,
+				ONBD0010000000000000001 /* OnboardingSheet.swift */,
 				SSR100001000000000000001 /* SummaryStatRow.swift */,
 				SC100001000000000000001 /* SettingsChrome.swift */,
 				UB100001000000000000001 /* UpdateBanner.swift */,
@@ -465,6 +460,7 @@
 				SRTVC00001BR000001 /* SortVoiceCopy.swift in Sources */,
 				SPSH0020000000000000001 /* SortPreviewSheet.swift in Sources */,
 				DCPS0020000000000000001 /* DailyCalmPreviewSheet.swift in Sources */,
+				ONBD0020000000000000001 /* OnboardingSheet.swift in Sources */,
 				HS000001000000000000001 /* HistorySheet.swift in Sources */,
 				SR000001000000000000001 /* SessionRecord.swift in Sources */,
 				ASH00001000000000000001 /* BinkyAppShortcuts.swift in Sources */,
@@ -660,7 +656,7 @@
 				CODE_SIGN_ENTITLEMENTS = Binky/Binky.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1.6.0;
+				CURRENT_PROJECT_VERSION = 2.0.0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -673,7 +669,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.binky.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -691,7 +687,7 @@
 				CODE_SIGN_ENTITLEMENTS = Binky/Binky.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1.6.0;
+				CURRENT_PROJECT_VERSION = 2.0.0;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -704,7 +700,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.binky.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -718,10 +714,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2.0.0;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.binky.app.BinkyTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -736,10 +732,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2.0.0;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.binky.app.BinkyTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;

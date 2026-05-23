@@ -237,4 +237,4 @@ public struct SortingRoutine: Codable, Identifiable, Equatable, Sendable {
 }
 
 /// Backward-compatible alias for saved presets / profiles.
-public typealias CompressionPreset = SortingRoutine
+public typealias Inbox = SortingRoutine

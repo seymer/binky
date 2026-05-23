@@ -329,7 +329,7 @@ private enum PostSortShortcutRunner {
     }
 }
 
-public func sortInboxContext(for fileURL: URL, snapshot: SortPreferencesSnapshot) -> (inboxRoot: URL, presets: [CompressionPreset]) {
+public func sortInboxContext(for fileURL: URL, snapshot: SortPreferencesSnapshot) -> (inboxRoot: URL, presets: [Inbox]) {
     let reg = snapshot.watchRegistry
     switch reg.routing(for: fileURL) {
     case .global:
@@ -360,7 +360,7 @@ func isURLExcludedForSort(url: URL, snapshot: SortPreferencesSnapshot) -> Bool {
     return false
 }
 
-func activeSortRulesForSnapshot(snapshot: SortPreferencesSnapshot, presets: [CompressionPreset]) -> [SortRule] {
+func activeSortRulesForSnapshot(snapshot: SortPreferencesSnapshot, presets: [Inbox]) -> [SortRule] {
     let combined = presets.flatMap(\.sortRules)
     if !combined.isEmpty {
         return combined
@@ -371,7 +371,7 @@ func activeSortRulesForSnapshot(snapshot: SortPreferencesSnapshot, presets: [Com
 func composedFinderTagsForSort(
     snapshot: SortPreferencesSnapshot,
     naturalCategory: FileSortCategory,
-    presets: [CompressionPreset],
+    presets: [Inbox],
     matchedRule: SortRule?
 ) -> [String] {
     FinderTagComposer.compose(
@@ -389,7 +389,7 @@ func fileURLMatchesGlobalSkipTags(_ url: URL, snapshot: SortPreferencesSnapshot)
     return tags.contains { snapshot.globalSkipTagSet.contains($0.lowercased()) }
 }
 
-func combinedTagFanoutPriority(presets: [CompressionPreset]) -> [String] {
+func combinedTagFanoutPriority(presets: [Inbox]) -> [String] {
     var seen = Set<String>()
     var out: [String] = []
     for p in presets {
@@ -405,11 +405,11 @@ func combinedTagFanoutPriority(presets: [CompressionPreset]) -> [String] {
     return out
 }
 
-func newTagExpiryDays(from presets: [CompressionPreset]) -> Int {
+func newTagExpiryDays(from presets: [Inbox]) -> Int {
         presets.first(where: { $0.newTagExpiryDays > 0 })?.newTagExpiryDays ?? 0
 }
 
-func postSortShortcutName(from presets: [CompressionPreset]) -> String {
+func postSortShortcutName(from presets: [Inbox]) -> String {
     for p in presets {
         let t = p.postSortShortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !t.isEmpty { return t }

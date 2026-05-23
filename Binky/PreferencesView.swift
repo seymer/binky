@@ -2606,7 +2606,7 @@ private struct RoutinesOrganizerTab: View {
     }
 
     @ViewBuilder
-    private func profileListRow(_ preset: CompressionPreset) -> some View {
+    private func profileListRow(_ preset: Inbox) -> some View {
         let isSelected = preset.id == selectedPresetID
         Button {
             selectedPresetID = preset.id
@@ -2676,7 +2676,7 @@ private struct RoutinesOrganizerTab: View {
             baseName: baseName,
             existingNames: Set(copy.map(\.name))
         )
-        var preset = CompressionPreset(name: name)
+        var preset = Inbox(name: name)
         apply(template, to: &preset)
         copy.append(preset)
         prefs.savedPresets = copy
@@ -2684,7 +2684,7 @@ private struct RoutinesOrganizerTab: View {
     }
 
     /// Applies template defaults (paths, starter rules). Caller sets name and appends to `savedPresets`.
-    private func apply(_ template: RoutineTemplate, to preset: inout CompressionPreset) {
+    private func apply(_ template: RoutineTemplate, to preset: inout Inbox) {
         func bookmarkDirectory(_ url: URL) {
             let normalized = url.standardizedFileURL
             preset.watchFolderPath = normalized.path
@@ -2792,11 +2792,11 @@ private struct RoutinesOrganizerTab: View {
         guard let idx = selectedPresetIndex else { return }
         var copy = prefs.savedPresets
         let source = copy[idx]
-        let name = CompressionPreset.uniqueDuplicatePresetName(
+        let name = Inbox.uniqueDuplicatePresetName(
             baseName: source.name,
             existingNames: Set(copy.map(\.name))
         )
-        let duplicated = CompressionPreset(duplicating: source, name: name)
+        let duplicated = Inbox(duplicating: source, name: name)
         copy.append(duplicated)
         prefs.savedPresets = copy
         selectedPresetID = duplicated.id

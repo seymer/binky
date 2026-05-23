@@ -65,7 +65,7 @@ final class BinkyPreferences: ObservableObject {
         let d = UserDefaults.standard
         guard !d.bool(forKey: seedKey) else { return }
         if savedPresets.isEmpty {
-            let defaultProfile = CompressionPreset(
+            let defaultProfile = Inbox(
                 name: String(localized: "Default", comment: "Built-in default organizer profile name.")
             )
             savedPresets = [defaultProfile]
@@ -216,11 +216,11 @@ final class BinkyPreferences: ObservableObject {
     @AppStorage("activePresetID") var activePresetID: String = ""
     @AppStorage("savedPresetsData") var savedPresetsData: Data = Data()
 
-    private var cachedSavedPresets: [CompressionPreset]?
-    var savedPresets: [CompressionPreset] {
+    private var cachedSavedPresets: [Inbox]?
+    var savedPresets: [Inbox] {
         get {
             if let cachedSavedPresets { return cachedSavedPresets }
-            let v = (try? JSONDecoder().decode([CompressionPreset].self, from: savedPresetsData)) ?? []
+            let v = (try? JSONDecoder().decode([Inbox].self, from: savedPresetsData)) ?? []
             cachedSavedPresets = v
             return v
         }
@@ -502,7 +502,7 @@ extension BinkyPreferences {
 
     @MainActor
     func makeSortPreferencesSnapshot() -> SortPreferencesSnapshot {
-        var byPresetID: [UUID: CompressionPreset] = [:]
+        var byPresetID: [UUID: Inbox] = [:]
         for p in savedPresets {
             byPresetID[p.id] = p
         }
@@ -545,7 +545,7 @@ extension BinkyPreferences {
     }
 
     /// Resolved active organizer profile (`activePresetID`), if any.
-    var activePreset: CompressionPreset? {
+    var activePreset: Inbox? {
         guard let uuid = UUID(uuidString: activePresetID) else { return nil }
         return savedPresets.first { $0.id == uuid }
     }

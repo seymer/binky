@@ -46,7 +46,7 @@ extension Notification.Name {
 
 /// Keys for `Notification.userInfo` payloads used across the app.
 enum BinkyNotificationUserInfoKey {
-    /// Value: `UUID` of the ``CompressionPreset`` / routine to sweep.
+    /// Value: `UUID` of the ``Inbox`` / routine to sweep.
     static let sortRoutinePresetID = "presetID"
     /// Value: ``MainWindowMode`` `.rawValue` string.
     static let mainWindowModeRaw = "mainWindowModeRaw"

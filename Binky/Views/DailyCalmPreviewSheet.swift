@@ -295,6 +295,8 @@ struct DailyCalmPreviewSheet: View {
         for url in allFiles {
             guard !Task.isCancelled else { break }
             scanProgress += 1
+            // Yield to let the main actor process UI events (Stop button).
+            await Task.yield()
 
             let classified = try? await classifyStage.run(url, context: ctx)
             let hosts = try? await originStage.run(url, context: ctx)

@@ -43,14 +43,13 @@ final class HeuristicSuggestionAdapterTests: XCTestCase {
         }
     }
 
-    func test_capsConfidenceAt_0_6() async throws {
-        // Heuristic confidence is intentionally bounded so the engine never
-        // treats it as auto-apply territory. AI adapters running on macOS 26
-        // can later raise confidence past this ceiling.
+    func test_capsConfidenceAt_0_4_forTypeFallback() async throws {
+        // Without a predictor, the adapter uses type-based fallback at 0.4.
+        // With a predictor + history, confidence can go up to 0.95.
         let adapter = HeuristicSuggestionAdapter(inboxRoot: fixtureInboxRoot)
         let suggestions = try await adapter.suggest(for: makeIngested(category: .images), context: ctx)
         let s = try XCTUnwrap(suggestions.first)
-        XCTAssertEqual(s.confidence, 0.6)
+        XCTAssertEqual(s.confidence, 0.4)
     }
 
     func test_pendingByDefault() async throws {

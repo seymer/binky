@@ -54,9 +54,11 @@ public typealias InboxRootResolver = @Sendable (FileSortCategory) -> URL
 /// language vs. semantic language) and in confidence ceiling.
 public struct HeuristicSuggestionAdapter: ContentSuggestionAdapter {
     private let inboxRoot: InboxRootResolver
+    private let predictor: DestinationPredictor?
 
-    public init(inboxRoot: @escaping InboxRootResolver) {
+    public init(inboxRoot: @escaping InboxRootResolver, predictor: DestinationPredictor? = nil) {
         self.inboxRoot = inboxRoot
+        self.predictor = predictor
     }
 
     public func suggest(
@@ -72,15 +74,40 @@ public struct HeuristicSuggestionAdapter: ContentSuggestionAdapter {
         if ingested.classification.category == .review { return [] }
 
         let category = ingested.classification.category
-        let destinationRoot = inboxRoot(category)
 
-        let suggestion = Suggestion(
+        // Intent-based: use DestinationPredictor if available (learns from history).
+        // Falls back to type-based default when no predictor or no history.
+        if let predictor {
+            let candidates = predictor.predict(
+                for: ingested.url,
+                category: category,
+                originHost: ingested.originHosts.primary
+            )
+            guard !candidates.isEmpty else {
+                return [typeFallbackSuggestion(for: ingested)]
+            }
+            return candidates.map { candidate in
+                Suggestion(
+                    source: ingested.url,
+                    action: .move(to: candidate.url),
+                    confidence: candidate.confidence,
+                    reasoning: candidate.reason
+                )
+            }
+        }
+
+        // No predictor → single type-based suggestion (cold start / tests).
+        return [typeFallbackSuggestion(for: ingested)]
+    }
+
+    private func typeFallbackSuggestion(for ingested: IngestedFile) -> Suggestion {
+        let category = ingested.classification.category
+        return Suggestion(
             source: ingested.url,
-            action: .move(to: destinationRoot),
-            confidence: 0.6,
+            action: .move(to: inboxRoot(category)),
+            confidence: 0.4,
             reasoning: Self.reasoning(for: ingested)
         )
-        return [suggestion]
     }
 
     /// One-line user-visible explanation. Currently English-only — will be

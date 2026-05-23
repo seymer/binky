@@ -14,7 +14,6 @@ struct DailyCalmPreviewSheet: View {
 
     @State private var sources: [URL] = []
     @State private var includeSubfolders: Bool = true
-    @State private var destinationMapping: DestinationMapping = .default
 
     @State private var suggestions: [SuggestionCardModel] = []
     @State private var duplicates: [DuplicateGroup] = []
@@ -74,8 +73,6 @@ struct DailyCalmPreviewSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 sourcesSection
-                Divider()
-                destinationsSection
             }
             .padding(16)
         }
@@ -123,33 +120,6 @@ struct DailyCalmPreviewSheet: View {
         }
     }
 
-    private var destinationsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Destinations", systemImage: "arrow.right.doc.on.clipboard")
-                .font(.headline)
-
-            ForEach(DestinationMapping.editableCategories, id: \.self) { category in
-                HStack {
-                    Text(category.rawValue.capitalized)
-                        .font(.caption.bold())
-                        .frame(width: 80, alignment: .leading)
-                    Text(shortenPath(destinationMapping.path(for: category).path))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Button("…") { pickDestination(for: category) }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                }
-            }
-
-            Text("Files go to the matching category folder. Unknown files go to Review.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-    }
 
     // MARK: - Results Panel (right)
 
@@ -192,11 +162,13 @@ struct DailyCalmPreviewSheet: View {
                         if !duplicates.isEmpty {
                             duplicateSection
                         }
-                        ForEach($suggestions.filter { card in
-                            filterCategory == nil || card.wrappedValue.suggestion.source.pathExtension.isEmpty == false
-                        }) { $card in
-                            if matchesFilter(card) {
-                                SuggestionRow(card: $card)
+                        ForEach(groupedBySource.indices, id: \.self) { idx in
+                            let group = groupedBySource[idx]
+                            if matchesFilter(group.primary) {
+                                SuggestionRow(
+                                    card: bindingForCard(group.primary.id),
+                                    siblings: group.all
+                                )
                             }
                         }
                     }
@@ -307,7 +279,6 @@ struct DailyCalmPreviewSheet: View {
         if sources.isEmpty {
             sources = [defaultSource]
         }
-        destinationMapping = DestinationMapping.fromPrefs(root: defaultSource)
     }
 
     private func addSource() {
@@ -335,16 +306,6 @@ struct DailyCalmPreviewSheet: View {
         }
     }
 
-    private func pickDestination(for category: FileSortCategory) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = destinationMapping.path(for: category)
-        if panel.runModal() == .OK, let url = panel.url {
-            destinationMapping.set(url, for: category)
-        }
-    }
 
     private func handleDrop(_ providers: [NSItemProvider]) {
         for provider in providers {
@@ -374,8 +335,7 @@ struct DailyCalmPreviewSheet: View {
             let result = try await Self.performScan(
                 sources: sources,
                 includeSubfolders: includeSubfolders,
-                mapping: destinationMapping
-            )
+                    )
             suggestions = result.cards
             duplicates = result.duplicates
             lastScanFileCount = result.fileCount
@@ -406,6 +366,35 @@ struct DailyCalmPreviewSheet: View {
 
     private var pendingSuggestions: [SuggestionCardModel] {
         suggestions.filter { $0.localDecision == .pending }
+    }
+
+    /// Groups suggestions by source URL. Each group's `primary` is the first
+    /// card (used for rendering the row); `all` contains every suggestion for
+    /// that source (the candidate destinations the user picks from).
+    private var groupedBySource: [(primary: SuggestionCardModel, all: [Suggestion])] {
+        var seen: [String: Int] = [:]
+        var groups: [(primary: SuggestionCardModel, all: [Suggestion])] = []
+        for card in suggestions {
+            let key = card.suggestion.source.standardizedFileURL.path
+            if let idx = seen[key] {
+                groups[idx].all.append(card.suggestion)
+            } else {
+                seen[key] = groups.count
+                groups.append((primary: card, all: [card.suggestion]))
+            }
+        }
+        return groups
+    }
+
+    private func bindingForCard(_ id: UUID) -> Binding<SuggestionCardModel> {
+        Binding(
+            get: { suggestions.first { $0.id == id } ?? suggestions[0] },
+            set: { new in
+                if let idx = suggestions.firstIndex(where: { $0.id == id }) {
+                    suggestions[idx] = new
+                }
+            }
+        )
     }
 
     private var activeCategories: [FileSortCategory] {
@@ -445,8 +434,7 @@ struct DailyCalmPreviewSheet: View {
 
     nonisolated private static func performScan(
         sources: [URL],
-        includeSubfolders: Bool,
-        mapping: DestinationMapping
+        includeSubfolders: Bool
     ) async throws -> ScanResult {
         let fm = FileManager.default
         var allFiles: [URL] = []
@@ -473,10 +461,12 @@ struct DailyCalmPreviewSheet: View {
             }
         }
 
-        let resolver: InboxRootResolver = { category in mapping.path(for: category) }
+        let fallbackRoot = sources.first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+        let predictor = DestinationPredictor(fallbackRoot: fallbackRoot)
+        let resolver: InboxRootResolver = { category in fallbackRoot.appendingPathComponent(category.downloadsSubfolder, isDirectory: true) }
         let engine = SuggestionEngine(
             adapters: [
-                HeuristicSuggestionAdapter(inboxRoot: resolver),
+                HeuristicSuggestionAdapter(inboxRoot: resolver, predictor: predictor),
                 FoundationModelsSuggestionAdapter(inboxRoot: resolver),
             ]
         )
@@ -530,119 +520,163 @@ struct DuplicateGroup: Identifiable {
     var resolved: Bool = false
 }
 
-/// Maps each FileSortCategory to a user-chosen destination folder.
-struct DestinationMapping {
-    private var map: [FileSortCategory: URL]
 
-    static let editableCategories: [FileSortCategory] = [
-        .images, .pdf, .video, .audio, .documents, .archives, .apps, .screenshots, .misc
-    ]
-
-    static var `default`: DestinationMapping {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let downloads = home.appendingPathComponent("Downloads", isDirectory: true)
-        return fromPrefs(root: downloads)
-    }
-
-    static func fromPrefs(root: URL) -> DestinationMapping {
-        var m: [FileSortCategory: URL] = [:]
-        for cat in FileSortCategory.allCases {
-            m[cat] = root.appendingPathComponent(cat.downloadsSubfolder, isDirectory: true)
-        }
-        return DestinationMapping(map: m)
-    }
-
-    func path(for category: FileSortCategory) -> URL {
-        map[category] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads/Misc", isDirectory: true)
-    }
-
-    mutating func set(_ url: URL, for category: FileSortCategory) {
-        map[category] = url
-    }
-}
-
-// MARK: - Suggestion Row
+// MARK: - Suggestion Row (multi-candidate)
 
 private struct SuggestionRow: View {
     @Binding var card: SuggestionCardModel
+    /// All suggestions for the same source file (multiple candidates from predictor).
+    let siblings: [Suggestion]
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: iconName)
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            // File info line
+            HStack(spacing: 8) {
+                Image(systemName: "doc.fill")
+                    .foregroundStyle(.tint)
                 Text(card.suggestion.source.lastPathComponent)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
-                Text(card.suggestion.reasoning)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                if card.localDecision != .pending {
+                    resultBadge
+                }
             }
 
-            Spacer()
+            // Candidate destinations (if pending)
+            if card.localDecision == .pending {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(siblings, id: \.id) { candidate in
+                        candidateButton(candidate)
+                    }
+                    otherButton
+                }
 
-            if let result = card.executionResult {
-                Label(shortenPath(result), systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.green)
-                    .lineLimit(1)
-            } else if let error = card.executionError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .lineLimit(1)
-            } else if card.localDecision == .pending {
-                Button("Apply") { applyOne() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                Button("Skip") { skip() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            } else {
-                Text(card.localDecision == .skipped ? "Skipped" : "Rejected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button("Skip") { skip() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
+        .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
     }
 
-    private var iconName: String {
-        switch card.suggestion.action {
-        case .move: return "folder.fill"
-        case .rename: return "pencil"
-        case .trash: return "trash"
-        case .keep: return "lock.fill"
-        case .runShortcut: return "bolt.fill"
+    @ViewBuilder
+    private func candidateButton(_ candidate: Suggestion) -> some View {
+        Button {
+            applyCandidate(candidate)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "folder.fill")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                Text(shortenPath(destinationPath(candidate)))
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Text(candidate.reasoning)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if let conf = candidate.confidence {
+                    Text("\(Int(conf * 100))%")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var otherButton: some View {
+        Button {
+            pickOther()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "folder.badge.questionmark")
+                    .font(.caption)
+                Text("Other…")
+                    .font(.caption)
+                Spacer()
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var resultBadge: some View {
+        if let result = card.executionResult {
+            Label(shortenPath(result), systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+                .lineLimit(1)
+        } else if let error = card.executionError {
+            Label(error, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(1)
+        } else if card.localDecision == .skipped {
+            Text("Skipped")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func applyOne() {
+    // MARK: Actions
+
+    private func applyCandidate(_ candidate: Suggestion) {
         let executor = SuggestionExecutor()
-        let result = executor.execute(card.suggestion)
+        let result = executor.execute(candidate)
         switch result.outcome {
         case .success(let path):
             card.localDecision = .applied
             card.executionResult = path
-            SuggestionStore.shared.record(card.suggestion, decision: .accepted)
+            SuggestionStore.shared.record(candidate, decision: .accepted)
         case .kept:
             card.localDecision = .applied
             card.executionResult = "(kept)"
-            SuggestionStore.shared.record(card.suggestion, decision: .accepted)
+            SuggestionStore.shared.record(candidate, decision: .accepted)
         case .failure(let reason):
             card.executionError = reason
+        }
+    }
+
+    private func pickOther() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Move here"
+        if panel.runModal() == .OK, let dest = panel.url {
+            let custom = Suggestion(
+                source: card.suggestion.source,
+                action: .move(to: dest),
+                reasoning: "You chose this folder"
+            )
+            applyCandidate(custom)
         }
     }
 
     private func skip() {
         card.localDecision = .skipped
         SuggestionStore.shared.record(card.suggestion, decision: .snoozed)
+    }
+
+    private func destinationPath(_ s: Suggestion) -> String {
+        if case .move(let dest) = s.action { return dest.path }
+        return "?"
     }
 
     private func shortenPath(_ path: String) -> String {

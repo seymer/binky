@@ -138,6 +138,15 @@ public final class SuggestionStore: @unchecked Sendable {
         loaded = true // Mark loaded so the next ensureLoaded is a no-op.
     }
 
+    /// All records where the user accepted a move action. Used by
+    /// `DestinationPredictor` to learn from past decisions.
+    public func allAcceptedMoveRecords() -> [DecisionRecord] {
+        lock.lock()
+        defer { lock.unlock() }
+        ensureLoadedLocked()
+        return Array(byKey.values.filter { $0.decision == .accepted && $0.actionKey.hasPrefix("move:") })
+    }
+
     // MARK: - Internals
 
     private func ensureLoadedLocked() {

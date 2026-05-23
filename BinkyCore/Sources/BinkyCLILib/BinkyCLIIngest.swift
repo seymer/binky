@@ -98,15 +98,14 @@ enum BinkyCLIIngestCommand {
             inboxRoot.appendingPathComponent(category.downloadsSubfolder, isDirectory: true)
         }
 
-        // Wire the engine with both adapters configured today. FoundationModels
-        // returns [] until macOS 26 + Apple Intelligence is on the path; passing
-        // it now keeps the CLI output stable when that adapter starts producing
-        // real suggestions later.
+        // Wire the engine with DestinationPredictor so CLI output matches
+        // what the app would suggest (intent-based, learns from history).
+        let predictor = DestinationPredictor(fallbackRoot: inboxRoot)
         let pipeline = IngestionPipeline()
         let engine = SuggestionEngine(
             pipeline: pipeline,
             adapters: [
-                HeuristicSuggestionAdapter(inboxRoot: inboxRootResolver),
+                HeuristicSuggestionAdapter(inboxRoot: inboxRootResolver, predictor: predictor),
                 FoundationModelsSuggestionAdapter(inboxRoot: inboxRootResolver),
             ]
         )

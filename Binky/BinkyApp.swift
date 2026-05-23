@@ -135,6 +135,7 @@ struct BinkyApp: App {
         // works for testing without restarting the app.
         Window("Daily Calm Preview", id: "daily-calm-preview") {
             DailyCalmPreviewSheet()
+                .environmentObject(root.prefs)
                 .tint(binkyTintColor)
         }
         .defaultSize(width: 720, height: 600)

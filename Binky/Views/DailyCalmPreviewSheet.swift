@@ -21,6 +21,7 @@ import AppKit
 ///     thing.
 struct DailyCalmPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var prefs: BinkyPreferences
 
     @State private var sourceURL: URL = FileManager.default
         .homeDirectoryForCurrentUser
@@ -56,7 +57,7 @@ struct DailyCalmPreviewSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Daily Calm — preview")
                     .font(.title2)
-                Text("v2 dry-run · nothing on disk is moved")
+                Text("v2 alpha · Apply moves files for real")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -173,9 +174,9 @@ struct DailyCalmPreviewSheet: View {
 
     private var footer: some View {
         HStack {
-            Image(systemName: "eye")
-                .foregroundStyle(.secondary)
-            Text("Read-only preview — Apply/Skip/Reject persist to ~/Library/Application Support/Binky.")
+            Image(systemName: "bolt.fill")
+                .foregroundStyle(.orange)
+            Text("Apply moves files for real. Skip/Reject only record your preference.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -220,9 +221,9 @@ struct DailyCalmPreviewSheet: View {
         defer { isLoading = false }
 
         let folder = sourceURL
-        let inboxRoot = FileManager.default
-            .homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/Binky-v2-preview", isDirectory: true)
+        // Use the user's configured inbox root from Preferences (same root
+        // v1 sorts into). Falls back to ~/Downloads if nothing is configured.
+        let inboxRoot = prefs.activeSortSweepRootDirectory()
 
         do {
             let result = try await Self.scanAndSuggest(folder: folder, inboxRoot: inboxRoot)
@@ -297,6 +298,10 @@ struct SuggestionCardModel: Identifiable {
     let id: UUID
     let suggestion: Suggestion
     var localDecision: LocalDecision = .pending
+    /// Set after a successful Apply — the actual destination path on disk.
+    var executionResult: String? = nil
+    /// Set when Apply fails — human-readable error reason.
+    var executionError: String? = nil
 
     enum LocalDecision: Equatable {
         case pending
@@ -352,7 +357,15 @@ private struct SuggestionCard: View {
 
                 Spacer()
 
-                if card.localDecision != .pending {
+                if let error = card.executionError {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if let dest = card.executionResult {
+                    Label("Moved → \(shortenPath(dest))", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                } else if card.localDecision != .pending {
                     Text(decisionLabel)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(decisionColor)
@@ -403,6 +416,14 @@ private struct SuggestionCard: View {
         return url.path
     }
 
+    private func shortenPath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+
     @ViewBuilder
     private func decisionButton(
         label: String,
@@ -420,12 +441,12 @@ private struct SuggestionCard: View {
     }
 
     /// Updates the card's in-window state AND persists the corresponding
-    /// `UserDecision` to `SuggestionStore`. Persistence means the next
-    /// `runPreview` will filter this suggestion out — Daily Calm doesn't
-    /// nag about decisions you already made.
+    /// `UserDecision` to `SuggestionStore`. For `.applied`, also executes the
+    /// proposed action via `SuggestionExecutor` — **this actually moves/renames/
+    /// trashes the file on disk**.
     ///
     /// `LocalDecision → UserDecision` mapping:
-    ///   - applied  → .accepted (user OK'd this proposal)
+    ///   - applied  → .accepted (user OK'd this proposal) + execute action
     ///   - skipped  → .snoozed  (not now, ask again later)
     ///   - rejected → .rejected (don't ask again about this proposal)
     ///   - pending  → no persistence (shouldn't happen via this button)
@@ -440,6 +461,22 @@ private struct SuggestionCard: View {
         }
         if let user {
             SuggestionStore.shared.record(card.suggestion, decision: user)
+        }
+
+        // Execute the real filesystem action when the user clicks Apply.
+        if target == .applied {
+            let executor = SuggestionExecutor()
+            let result = executor.execute(card.suggestion)
+            switch result.outcome {
+            case .success(let destPath):
+                card.executionResult = destPath
+            case .kept:
+                card.executionResult = "(kept in place)"
+            case .failure(let reason):
+                card.executionError = reason
+                // Revert the visual state so the user can retry or skip.
+                card.localDecision = .pending
+            }
         }
     }
 

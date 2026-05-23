@@ -20,12 +20,16 @@ import AppKit
 ///     dry-run nature explicit so testers can't mistake it for the real
 ///     thing.
 struct DailyCalmPreviewSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var prefs: BinkyPreferences
 
     @State private var sourceURL: URL = FileManager.default
         .homeDirectoryForCurrentUser
         .appendingPathComponent("Downloads", isDirectory: true)
+
+    /// Sync source folder from prefs on first appear.
+    private var initialSourceFromPrefs: URL {
+        prefs.activeSortSweepRootDirectory()
+    }
 
     @State private var suggestions: [SuggestionCardModel] = []
     @State private var isLoading: Bool = false
@@ -44,8 +48,8 @@ struct DailyCalmPreviewSheet: View {
         .padding(22)
         .frame(minWidth: 640, minHeight: 480)
         .task {
-            // Auto-run on first appear so testers see suggestions without
-            // clicking. They can refresh or change the source folder after.
+            // Use the user's configured watch folder as the default scan source.
+            sourceURL = initialSourceFromPrefs
             await runPreview()
         }
     }
@@ -69,13 +73,6 @@ struct DailyCalmPreviewSheet: View {
             }
             .keyboardShortcut("r", modifiers: [.command])
             .disabled(isLoading)
-
-            Button(role: .cancel) {
-                dismiss()
-            } label: {
-                Text("Close")
-            }
-            .keyboardShortcut(.cancelAction)
         }
     }
 

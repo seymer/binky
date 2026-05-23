@@ -73,9 +73,9 @@ struct ContentView: View {
             }
     }
 
-    /// Single split layout; sidebar swaps between Quick Sort compact panel and full Routines controls.
+    /// v2: Daily Calm is the main window. The old OrganizerMainView is retired.
     private var coreBody: some View {
-        OrganizerMainView(vm: vm)
+        DailyCalmPreviewSheet()
     }
 
     /// First launch after upgrading: preserve muscle memory when someone already wired Routines up.

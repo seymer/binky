@@ -34,6 +34,7 @@
 		DNKBLD1000010000000001 /* DinkyBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DNKBRG1000010000000001 /* DinkyBridge.swift */; };
 		NTEXP002000000000000001 /* NewTagExpiry.swift in Sources */ = {isa = PBXBuildFile; fileRef = NTEXP102000000000000001 /* NewTagExpiry.swift */; };
 		SPSH0020000000000000001 /* SortPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SPSH0010000000000000001 /* SortPreviewSheet.swift */; };
+		DCPS0020000000000000001 /* DailyCalmPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCPS0010000000000000001 /* DailyCalmPreviewSheet.swift */; };
 		FW000001000000000000001 /* FolderWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = FW100001000000000000001 /* FolderWatcher.swift */; };
 		WR000001000000000000001 /* WatchRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WR100001000000000000001 /* WatchRegistry.swift */; };
 		GH000001000000000000001 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = GH100001000000000000001 /* GlobalHotkeyManager.swift */; };
@@ -107,6 +108,7 @@
 		SRTVC10001FR000001 /* SortVoiceCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortVoiceCopy.swift; sourceTree = "<group>"; };
 		RVTRI10001FR000001 /* ReviewFolderTriageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFolderTriageSheet.swift; sourceTree = "<group>"; };
 		SPSH0010000000000000001 /* SortPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortPreviewSheet.swift; sourceTree = "<group>"; };
+		DCPS0010000000000000001 /* DailyCalmPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyCalmPreviewSheet.swift; sourceTree = "<group>"; };
 		E71A34AFC5CA41FDACAEE19D /* Preview Content/Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Content/Preview Assets.xcassets"; sourceTree = "<group>"; };
 		F5D3DAE858994431BC84C13F /* BinkyPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinkyPreferences.swift; sourceTree = "<group>"; };
 		BKSRURF00000100000001 /* SortRule+ReviewDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SortRule+ReviewDraft.swift"; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				BBAR100001FR000001 /* BinkySortProgressBar.swift */,
 				CURS100001FR000001 /* CurrentlySortingSheet.swift */,
 				SPSH0010000000000000001 /* SortPreviewSheet.swift */,
+				DCPS0010000000000000001 /* DailyCalmPreviewSheet.swift */,
 				56D9DE1C999B470FBB27E454 /* DropZoneView.swift */,
 				OES100001000000000000001 /* OrganizerEmptyStateView.swift */,
 				SSR100001000000000000001 /* SummaryStatRow.swift */,
@@ -481,6 +484,7 @@
 				RVTRI00001BR000001 /* ReviewFolderTriageSheet.swift in Sources */,
 				SRTVC00001BR000001 /* SortVoiceCopy.swift in Sources */,
 				SPSH0020000000000000001 /* SortPreviewSheet.swift in Sources */,
+				DCPS0020000000000000001 /* DailyCalmPreviewSheet.swift in Sources */,
 				HS000001000000000000001 /* HistorySheet.swift in Sources */,
 				SR000001000000000000001 /* SessionRecord.swift in Sources */,
 				ASH00001000000000000001 /* BinkyAppShortcuts.swift in Sources */,

@@ -125,6 +125,20 @@ struct BinkyApp: App {
         }
         .defaultSize(width: 820, height: 600)
         .commandsRemoved()
+
+        // v2 dry-run preview window — hidden behind the
+        // `v2.dailyCalmPreviewEnabled` UserDefaults key so it's invisible to
+        // 1.x users by default. Flip with:
+        //   defaults write com.binky.app v2.dailyCalmPreviewEnabled -bool true
+        // The Help menu only renders the entry point when the flag is on,
+        // but the Window scene itself is always defined so `openWindow(id:)`
+        // works for testing without restarting the app.
+        Window("Daily Calm Preview", id: "daily-calm-preview") {
+            DailyCalmPreviewSheet()
+                .tint(binkyTintColor)
+        }
+        .defaultSize(width: 720, height: 600)
+        .commandsRemoved()
     }
 }
 
@@ -196,6 +210,12 @@ private struct HelpMenuCommands: View {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var updater: UpdateChecker
 
+    /// Hidden behind a default — flip to `true` via:
+    ///   defaults write com.binky.app v2.dailyCalmPreviewEnabled -bool true
+    /// to get the v2 dry-run entry point in the Help menu. Stays off for
+    /// every regular 1.x user.
+    @AppStorage("v2.dailyCalmPreviewEnabled") private var v2PreviewEnabled = false
+
     private static let repoURL = URL(string: "https://github.com/heyderekj/binky")!
     private static let siteURL = URL(string: "https://binkyfiles.com")!
     private static let leaveReviewURL = URL(string: "https://github.com/heyderekj/binky/discussions/new?category=reviews")!
@@ -266,6 +286,17 @@ private struct HelpMenuCommands: View {
                     extraBody: "## How can we help?\n\n"
                 )
             )
+        }
+
+        // v2 dry-run developer entry. Hidden by default; only renders when the
+        // `v2.dailyCalmPreviewEnabled` UserDefaults flag is true.
+        if v2PreviewEnabled {
+            Divider()
+            Button("Daily Calm preview… (v2)") {
+                NSApp.activate()
+                openWindow(id: "daily-calm-preview")
+            }
+            .keyboardShortcut("d", modifiers: [.command, .option])
         }
     }
 }

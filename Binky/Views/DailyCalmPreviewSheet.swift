@@ -30,6 +30,7 @@ struct DailyCalmPreviewSheet: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
     @State private var lastScanCount: Int = 0
+    @State private var lastAlreadyDecidedCount: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -174,12 +175,23 @@ struct DailyCalmPreviewSheet: View {
         HStack {
             Image(systemName: "eye")
                 .foregroundStyle(.secondary)
-            Text("Read-only preview — Apply/Skip/Reject record your choice in this window only.")
+            Text("Read-only preview — Apply/Skip/Reject persist to ~/Library/Application Support/Binky.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
+            if lastAlreadyDecidedCount > 0 {
+                Text("\(lastAlreadyDecidedCount) already decided")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Button("Forget all") {
+                    SuggestionStore.shared.clearAll()
+                    Task { await runPreview() }
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+            }
             if lastScanCount > 0 {
-                Text("\(suggestions.count) suggestion(s) · \(lastScanCount) file(s)")
+                Text("\(suggestions.count) pending · \(lastScanCount) file(s)")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -216,6 +228,7 @@ struct DailyCalmPreviewSheet: View {
             let result = try await Self.scanAndSuggest(folder: folder, inboxRoot: inboxRoot)
             self.suggestions = result.cards
             self.lastScanCount = result.scannedCount
+            self.lastAlreadyDecidedCount = result.alreadyDecidedCount
         } catch {
             self.errorMessage = error.localizedDescription
         }
@@ -225,10 +238,16 @@ struct DailyCalmPreviewSheet: View {
     /// main actor — keeps the SwiftUI view thread responsive while the engine
     /// hashes potentially-large files. The view-side bookkeeping (suggestions,
     /// error, isLoading) is updated back on the main actor by the caller.
+    ///
+    /// **Filter rule:** suggestions that already have a persisted decision
+    /// in `SuggestionStore` (accepted / rejected / snoozed) are dropped from
+    /// the card list. The whole point of recording decisions is so Daily Calm
+    /// stops nagging — re-asking about a file the user already rejected
+    /// would defeat the trust-first design.
     nonisolated private static func scanAndSuggest(
         folder: URL,
         inboxRoot: URL
-    ) async throws -> (cards: [SuggestionCardModel], scannedCount: Int) {
+    ) async throws -> (cards: [SuggestionCardModel], scannedCount: Int, alreadyDecidedCount: Int) {
         let fm = FileManager.default
         let entries = try fm.contentsOfDirectory(
             at: folder,
@@ -248,18 +267,24 @@ struct DailyCalmPreviewSheet: View {
                 FoundationModelsSuggestionAdapter(inboxRoot: inboxRootResolver),
             ]
         )
+        let store = SuggestionStore.shared
 
         var cards: [SuggestionCardModel] = []
+        var alreadyDecided = 0
         for url in regularFiles {
             // Adapter errors are absorbed inside the engine; only ingestion
             // throws here. Skip individual failures so one bad file doesn't
             // wipe the whole preview list.
             guard let suggestions = try? await engine.suggest(for: url) else { continue }
             for s in suggestions {
+                if store.decision(for: s) != nil {
+                    alreadyDecided += 1
+                    continue
+                }
                 cards.append(SuggestionCardModel(suggestion: s))
             }
         }
-        return (cards, regularFiles.count)
+        return (cards, regularFiles.count, alreadyDecided)
     }
 }
 
@@ -386,11 +411,35 @@ private struct SuggestionCard: View {
         prominent: Bool
     ) -> some View {
         if prominent {
-            Button(role: role) { card.localDecision = target } label: { Text(label) }
+            Button(role: role) { applyDecision(target) } label: { Text(label) }
                 .buttonStyle(.borderedProminent)
         } else {
-            Button(role: role) { card.localDecision = target } label: { Text(label) }
+            Button(role: role) { applyDecision(target) } label: { Text(label) }
                 .buttonStyle(.bordered)
+        }
+    }
+
+    /// Updates the card's in-window state AND persists the corresponding
+    /// `UserDecision` to `SuggestionStore`. Persistence means the next
+    /// `runPreview` will filter this suggestion out — Daily Calm doesn't
+    /// nag about decisions you already made.
+    ///
+    /// `LocalDecision → UserDecision` mapping:
+    ///   - applied  → .accepted (user OK'd this proposal)
+    ///   - skipped  → .snoozed  (not now, ask again later)
+    ///   - rejected → .rejected (don't ask again about this proposal)
+    ///   - pending  → no persistence (shouldn't happen via this button)
+    private func applyDecision(_ target: SuggestionCardModel.LocalDecision) {
+        card.localDecision = target
+        let user: UserDecision?
+        switch target {
+        case .pending:  user = nil
+        case .applied:  user = .accepted
+        case .skipped:  user = .snoozed
+        case .rejected: user = .rejected
+        }
+        if let user {
+            SuggestionStore.shared.record(card.suggestion, decision: user)
         }
     }
 

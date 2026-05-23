@@ -17,6 +17,7 @@ struct DailyCalmPreviewSheet: View {
     @State private var isScanning: Bool = false
     @State private var scanTotal: Int = 0
     @State private var scanProgress: Int = 0
+    @State private var scanTask: Task<Void, Never>? = nil
 
     // Stats
     @State private var filedCount: Int = 0
@@ -44,7 +45,7 @@ struct DailyCalmPreviewSheet: View {
         }
         .overlay(dropOverlay)
         .overlay(undoToast, alignment: .bottom)
-        .task { loadSources(); if !sources.isEmpty { await scan() } }
+        .task { loadSources(); if !sources.isEmpty { startScan() } }
         .onDisappear { saveSources() }
         .background(keyboardHandler)
     }
@@ -59,6 +60,9 @@ struct DailyCalmPreviewSheet: View {
                 Text("Scanning \(scanProgress)/\(scanTotal)…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("Stop") { stopScan() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             } else if !items.isEmpty {
                 Label("\(filedCount) filed", systemImage: "checkmark.circle.fill")
                     .font(.caption.bold())
@@ -82,7 +86,7 @@ struct DailyCalmPreviewSheet: View {
                 .tint(binkyTintColor)
             }
 
-            Button { Task { await scan() } } label: {
+            Button { startScan() } label: {
                 Label("Scan", systemImage: "arrow.clockwise")
             }
             .disabled(sources.isEmpty || isScanning)
@@ -316,6 +320,17 @@ struct DailyCalmPreviewSheet: View {
         selectedIndex = 0
     }
 
+    private func stopScan() {
+        scanTask?.cancel()
+        scanTask = nil
+        isScanning = false
+    }
+
+    private func startScan() {
+        scanTask?.cancel()
+        scanTask = Task { await scan() }
+    }
+
     private func applyItem(at idx: Int, to suggestion: Suggestion) {
         guard items.indices.contains(idx) else { return }
         let executor = SuggestionExecutor()
@@ -460,7 +475,7 @@ struct DailyCalmPreviewSheet: View {
                 }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Task { await scan() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { startScan() }
     }
 
     private func addSource() {
@@ -471,7 +486,7 @@ struct DailyCalmPreviewSheet: View {
         if panel.runModal() == .OK {
             for url in panel.urls where !sources.contains(url) { sources.append(url) }
             saveSources()
-            Task { await scan() }
+            startScan()
         }
     }
 
@@ -483,7 +498,7 @@ struct DailyCalmPreviewSheet: View {
         if panel.runModal() == .OK {
             for url in panel.urls where !sources.contains(url) { sources.append(url) }
             saveSources()
-            Task { await scan() }
+            startScan()
         }
     }
 

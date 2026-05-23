@@ -103,9 +103,6 @@
         }
       }
     },
-    "· %lld already decided" : {
-
-    },
     "“New” tag expiry" : {
       "comment" : "Routine editor section: New tag expiry.",
       "localizations" : {
@@ -152,6 +149,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "{日期} {莖}{ext}"
+          }
+        }
+      }
+    },
+    "%@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ (%2$@)"
           }
         }
       }
@@ -415,6 +422,9 @@
         }
       }
     },
+    "%lld filed" : {
+
+    },
     "%lld files sorted this week" : {
       "comment" : "Weekly digest share card headline; count of file rows touched.",
       "localizations" : {
@@ -432,7 +442,7 @@
         }
       }
     },
-    "%lld identical files" : {
+    "%lld files to review" : {
 
     },
     "%lld in review" : {
@@ -564,15 +574,11 @@
         }
       }
     },
-    "%lld scanned · %lld suggestions · %lld duplicate groups" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld scanned · %2$lld suggestions · %3$lld duplicate groups"
-          }
-        }
-      }
+    "%lld remaining" : {
+
+    },
+    "%lld skipped" : {
+
     },
     "%lld want a second look." : {
       "comment" : "Organizer banner: files in Review needing attention; integer count interpolated.\nReview popover subtitle.",
@@ -680,10 +686,7 @@
         }
       }
     },
-    "+ Add files" : {
-
-    },
-    "+ Add folder" : {
+    "+ Folder" : {
 
     },
     "+%lld more in full preview" : {
@@ -720,6 +723,9 @@
           }
         }
       }
+    },
+    "⏎ Apply top · ⌫ Skip · ⌘⏎ Apply all confident · ↑↓ Navigate" : {
+
     },
     "1 day" : {
       "comment" : "New tag expiry choice.",
@@ -918,6 +924,12 @@
         }
       }
     },
+    "Add files" : {
+
+    },
+    "Add folder" : {
+
+    },
     "Add routine" : {
       "comment" : "Routines list: add row.",
       "localizations" : {
@@ -934,9 +946,6 @@
           }
         }
       }
-    },
-    "Add sources and hit Scan" : {
-
     },
     "Add the “New” Finder tag when sorting" : {
       "comment" : "Settings UI.",
@@ -1432,23 +1441,7 @@
         }
       }
     },
-    "Apply %@ (%lld)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Apply %1$@ (%2$lld)"
-          }
-        }
-      }
-    },
-    "Apply all (%lld)" : {
-
-    },
-    "Apply moves files for real." : {
-
-    },
-    "Apply…" : {
+    "Apply %lld confident" : {
 
     },
     "Approve Binky in System Settings → General → Login Items." : {
@@ -3939,10 +3932,10 @@
         }
       }
     },
-    "Drop folders here or click + to add." : {
+    "Drop folders here to get started" : {
 
     },
-    "Drop to add sources" : {
+    "Drop to add" : {
 
     },
     "Dry run" : {
@@ -3995,9 +3988,6 @@
           }
         }
       }
-    },
-    "Duplicates found" : {
-
     },
     "Each suggestion shows where a file would go and why. Tap Apply to move it, Skip to defer, or Reject to never see it again." : {
 
@@ -4562,9 +4552,6 @@
           }
         }
       }
-    },
-    "Filter:" : {
-
     },
     "Find" : {
       "comment" : "System shortcut name for conflict warning.",
@@ -5672,9 +5659,6 @@
         }
       }
     },
-    "Include subfolders" : {
-
-    },
     "Incomplete download — skipped for now." : {
       "comment" : "Voice: transient skip.",
       "localizations" : {
@@ -5968,12 +5952,6 @@
         }
       }
     },
-    "Keep all" : {
-
-    },
-    "Keep first" : {
-
-    },
     "Keep it" : {
       "comment" : "Cancel clear duplicate memory.",
       "localizations" : {
@@ -5990,9 +5968,6 @@
           }
         }
       }
-    },
-    "Keep newest" : {
-
     },
     "Keeps watch-folder sorting awake even when the window is closed. Use the menu bar for Sort Now and History." : {
       "comment" : "Settings UI: menu bar mode hint.",
@@ -6687,6 +6662,9 @@
           }
         }
       }
+    },
+    "Moved %@" : {
+
     },
     "Moved %1$lld · Kept %2$lld · Skipped %3$lld" : {
       "comment" : "Sort notification; three counts.",
@@ -7998,6 +7976,9 @@
           }
         }
       }
+    },
+    "or drag folders / files onto this window" : {
+
     },
     "Other…" : {
 
@@ -9760,6 +9741,16 @@
     "Scan" : {
 
     },
+    "Scanning %lld/%lld…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Scanning %1$lld/%2$lld…"
+          }
+        }
+      }
+    },
     "Scanning folders…" : {
       "comment" : "Rule editor: scanning watch tree for paths.",
       "localizations" : {
@@ -9776,9 +9767,6 @@
           }
         }
       }
-    },
-    "Scanning…" : {
-
     },
     "Screenshots" : {
       "comment" : "Sort category label for Finder tag defaults.\nSort category.",
@@ -10435,7 +10423,7 @@
         }
       }
     },
-    "Skip" : {
+    "Skip (⌫)" : {
 
     },
     "Skipped" : {
@@ -11070,6 +11058,9 @@
           }
         }
       }
+    },
+    "Subfolders" : {
+
     },
     "Suggest" : {
       "comment" : "Rule editor: open destination path suggestions.",
@@ -12746,6 +12737,9 @@
       }
     },
     "You decide" : {
+
+    },
+    "You filed %lld file(s) this session." : {
 
     },
     "You’re on Binky %@ — the latest." : {
